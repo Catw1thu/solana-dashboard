@@ -4,18 +4,17 @@ import Client, {
   SubscribeRequest,
 } from '@triton-one/yellowstone-grpc';
 import { ConfigService } from '@nestjs/config';
-import { TransactionFormatter } from './transaction-formatter';
-import bs58 from 'bs58';
+import { PumpSwapParser } from '../dex-parsers/pumpSwap';
 
 @Injectable()
 export class GrpcService implements OnModuleInit {
   private client: Client;
   private isRunning = false;
-  private transactionFormatter: TransactionFormatter;
 
-  constructor(private configService: ConfigService) {
-    this.transactionFormatter = new TransactionFormatter();
-  }
+  constructor(
+    private configService: ConfigService,
+    private pumpSwapParser: PumpSwapParser,
+  ) {}
 
   async onModuleInit() {
     await this.connect();
@@ -53,7 +52,7 @@ export class GrpcService implements OnModuleInit {
           vote: false,
           failed: false,
           signature: undefined,
-          accountInclude: ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8'],
+          accountInclude: ['pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'],
           accountExclude: [],
           accountRequired: [],
         },
@@ -82,10 +81,10 @@ export class GrpcService implements OnModuleInit {
       throw reason;
     });
 
-    console.log('🚀 Listening for Raydium transactions...');
+    console.log('🚀 Listening for PumpSwap transactions...');
     stream.on('data', (data) => {
       if (data.transaction) {
-        this.processTransaction(data.transaction);
+        this.parseTx(data.transaction);
       }
     });
 
@@ -100,30 +99,39 @@ export class GrpcService implements OnModuleInit {
     });
   }
 
-  private processTransaction(txData: any) {
-    // 提取核心数据
-    const signature = bs58.encode(txData.transaction.signature);
-    const slot = txData.slot;
-    const logs = txData.transaction.meta?.logMessages || [];
+  private parseTx(tx: any) {
+    const event = this.pumpSwapParser.parseTx(tx);
 
-    const rayLogRegex = /ray_log:\s*([^ ]+)/;
-
-    for (const log of logs) {
-      // 提取 Base64 字符串
-      // log 格式通常是: "Program log: ray_log: <Base64_String>"
-      const match = log.match(rayLogRegex);
-      if (match && match[1]) {
-        const base64Data = match[1];
-        const swapData = this.transactionFormatter.decodeRaydiumLog(base64Data);
-        if (swapData) {
-          console.log(`\n-----------------------------------------`);
-          console.log(`⚡️ SWAP Detected! | Slot: ${slot}`);
-          console.log(`🔗 Tx: https://solscan.io/tx/${signature}`);
-          console.log(`💰 Amount In:  ${swapData.amountIn}`);
-          console.log(`💵 Amount Out: ${swapData.amountOut}`);
-          // 注意：这里暂时还不知道是哪个币换哪个币，只知道数量
-          // 下一步我们会结合 AccountKeys 来确定币种
-        }
+    if (event) {
+      if (event.type === 'CREATE_POOL') {
+        console.log(`\n🎉 [PUMP GRADUATION] 新池子诞生!`);
+        console.log(`Slot: ${event.slot}`);
+        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
+        console.log(`Pool: ${event.pool}`);
+        console.log(`User: ${event.creator}`);
+        console.log(`Token: ${event.baseMint}`);
+        console.log(`Init Liquidity: ${event.quoteAmount}`);
+        console.log(`Timestamp: ${event.timestamp}`);
+      }
+      if (event.type === 'BUY') {
+        console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
+        console.log(`Slot: ${event.slot}`);
+        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
+        console.log(`Pool: ${event.pool}`);
+        console.log(`User: ${event.user}`);
+        console.log(`Token Amount Bought: ${event.tokenAmount}`);
+        console.log(`SOL Amount Spent: ${event.solAmount}`);
+        console.log(`Timestamp: ${event.timestamp}`);
+      }
+      if (event.type === 'SELL') {
+        console.log(`\n🔴 [PUMP SELL] 发生卖出交易!`);
+        console.log(`Slot: ${event.slot}`);
+        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
+        console.log(`Pool: ${event.pool}`);
+        console.log(`User: ${event.user}`);
+        console.log(`Token Amount Sold: ${event.tokenAmount}`);
+        console.log(`SOL Amount Received: ${event.solAmount}`);
+        console.log(`Timestamp: ${event.timestamp}`);
       }
     }
   }
