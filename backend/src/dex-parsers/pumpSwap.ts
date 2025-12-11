@@ -24,6 +24,9 @@ export interface PumpSwapTradeEvent {
   quoteMint: string;
   tokenAmount: bigint;
   solAmount: bigint;
+  limitSolAmount: bigint;
+  protocolFee: bigint;
+  lpFee: bigint;
   price: number;
   timestamp: number;
 }
@@ -36,9 +39,20 @@ export class PumpSwapParser {
   public readonly programId = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
   // discriminator
   private readonly DISCRIMINATORS = {
-    BUY: Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]),
-    SELL: Buffer.from([51, 230, 133, 164, 1, 127, 131, 173]),
-    CREATE_POOL: Buffer.from([233, 146, 209, 142, 207, 104, 64, 188]),
+    // ix
+    BUY_IX: Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]),
+    SELL_IX: Buffer.from([51, 230, 133, 164, 1, 127, 131, 173]),
+    CREATE_POOL_IX: Buffer.from([233, 146, 209, 142, 207, 104, 64, 188]),
+    // event
+    BUY_EVENT: Buffer.from([
+      228, 69, 165, 46, 81, 203, 154, 29, 103, 244, 82, 31, 44, 245, 119, 119,
+    ]),
+    SELL_EVENT: Buffer.from([
+      228, 69, 165, 46, 81, 203, 154, 29, 62, 47, 55, 10, 165, 3, 220, 42,
+    ]),
+    CREATE_POOL_EVENT: Buffer.from([
+      228, 69, 165, 46, 81, 203, 154, 29, 177, 49, 12, 210, 160, 118, 167, 116,
+    ]),
   };
 
   public parseTx(tx: any): PumpSwapEvent | null {
@@ -49,8 +63,10 @@ export class PumpSwapParser {
       tx.transaction.transaction.message.accountKeys.map((k) =>
         bs58.encode(k),
       ) || [];
+    const innerIxs = tx.transaction.meta?.innerInstructions || [];
 
-    for (const ix of ixs) {
+    for (let i = 0; i < ixs.length; i++) {
+      const ix = ixs[i];
       const programId = accountKeys[ix.programIdIndex];
       if (programId !== this.programId) continue;
 
@@ -60,8 +76,10 @@ export class PumpSwapParser {
       const discriminator = dataBuffer.subarray(0, 8);
       const restData = dataBuffer.subarray(8);
 
-      if (discriminator.equals(this.DISCRIMINATORS.BUY)) {
-        return this.parseBuyInstruction(
+      let draftEvent: PumpSwapEvent | null = null;
+
+      if (discriminator.equals(this.DISCRIMINATORS.BUY_IX)) {
+        draftEvent = this.parseBuyInstruction(
           restData,
           ix.accounts,
           accountKeys,
@@ -69,8 +87,8 @@ export class PumpSwapParser {
           slot,
         );
       }
-      if (discriminator.equals(this.DISCRIMINATORS.SELL)) {
-        return this.parseSellInstruction(
+      if (discriminator.equals(this.DISCRIMINATORS.SELL_IX)) {
+        draftEvent = this.parseSellInstruction(
           restData,
           ix.accounts,
           accountKeys,
@@ -78,14 +96,22 @@ export class PumpSwapParser {
           slot,
         );
       }
-      if (discriminator.equals(this.DISCRIMINATORS.CREATE_POOL)) {
-        return this.parseCreatePoolInstruction(
+      if (discriminator.equals(this.DISCRIMINATORS.CREATE_POOL_IX)) {
+        draftEvent = this.parseCreatePoolInstruction(
           restData,
           ix.accounts,
           accountKeys,
           signature,
           slot,
         );
+      }
+
+      if (draftEvent) {
+        const innerIx = innerIxs.find((inner) => inner.index === i);
+        if (innerIx && innerIx.instructions) {
+          this.scanAndMergeInnerEvents(draftEvent, innerIx.instructions);
+        }
+        return draftEvent;
       }
     }
     return null;
@@ -101,7 +127,7 @@ export class PumpSwapParser {
     // Layout:
     // index: u16 (offset 0)
     // base_amount_in: u64 (offset 2)
-    // quote_amount_in: u64 (offset 10)
+    // quote_amount_out: u64 (offset 10)
 
     // Accounts:
     // pool: accounts[0]
@@ -164,8 +190,11 @@ export class PumpSwapParser {
         baseMint: allAccounts[accountIndices[3]],
         quoteMint: allAccounts[accountIndices[4]],
         tokenAmount: baseAmountOut,
+        limitSolAmount: maxQuoteAmountIn,
         solAmount: maxQuoteAmountIn,
-        price: Number(baseAmountOut) / Number(maxQuoteAmountIn),
+        protocolFee: BigInt(0),
+        lpFee: BigInt(0),
+        price: 0,
         timestamp: Date.now(),
       };
     } catch (e) {
@@ -205,12 +234,69 @@ export class PumpSwapParser {
         baseMint: allAccounts[accountIndices[3]],
         quoteMint: allAccounts[accountIndices[4]],
         tokenAmount: baseAmountIn,
+        limitSolAmount: minQuoteAmountOut,
         solAmount: minQuoteAmountOut,
-        price: Number(baseAmountIn) / Number(minQuoteAmountOut),
+        protocolFee: BigInt(0),
+        lpFee: BigInt(0),
+        price: 0,
         timestamp: Date.now(),
       };
     } catch (e) {
       return null;
+    }
+  }
+
+  private scanAndMergeInnerEvents(
+    event: PumpSwapEvent,
+    innerInstructions: any[],
+  ) {
+    if (event.type !== 'BUY' && event.type !== 'SELL') return;
+    for (const innerIx of innerInstructions) {
+      const data = Buffer.from(innerIx.data);
+      if (data.length < 16) continue;
+      const discriminator = data.subarray(0, 16);
+
+      if (
+        event.type === 'BUY' &&
+        discriminator.equals(this.DISCRIMINATORS.BUY_EVENT)
+      ) {
+        this.mergeTradeData(event, data);
+      }
+      if (
+        event.type === 'SELL' &&
+        discriminator.equals(this.DISCRIMINATORS.SELL_EVENT)
+      ) {
+        this.mergeTradeData(event, data);
+      }
+    }
+  }
+
+  private mergeTradeData(event: PumpSwapTradeEvent, data: Buffer) {
+    // 0-15: Discriminator (16 bytes)
+    // 16: timestamp (8)
+    // 24: base_amount_out (8)
+    // 32: max_quote_amount_in (8)
+    // 40: user_base_token_reserves (8)
+    // 48: user_quote_token_reserves (8)
+    // 56: pool_base_token_reserves (8)
+    // 64: pool_quote_token_reserves (8)
+    // 72: quote_amount_in (8)
+    // 80: lp_fee_basis_points (8)
+    // 88: lp_fee (8)
+    // 96: protocol_fee_basis_points (8)
+    // 104: protocol_fee (8)
+    // 112: quote_amount_in_with_lp_fee (8)
+    // 120: user_quote_amount_in (8)
+    try {
+      event.solAmount = data.readBigUInt64LE(120);
+      event.lpFee = data.readBigInt64LE(88);
+      event.protocolFee = data.readBigInt64LE(104);
+
+      if (Number(event.tokenAmount) > 0) {
+        event.price = Number(event.tokenAmount) / Number(event.solAmount);
+      }
+    } catch (e) {
+      console.error('Failed to merge Trade Event data', e);
     }
   }
 }

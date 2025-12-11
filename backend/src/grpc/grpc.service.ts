@@ -121,6 +121,7 @@ export class GrpcService implements OnModuleInit {
         console.log(`User: ${event.user}`);
         console.log(`Token Amount Bought: ${event.tokenAmount}`);
         console.log(`SOL Amount Spent: ${event.solAmount}`);
+        console.log(`Price: ${event.price}`);
         console.log(`Timestamp: ${event.timestamp}`);
       }
       if (event.type === 'SELL') {
@@ -131,6 +132,7 @@ export class GrpcService implements OnModuleInit {
         console.log(`User: ${event.user}`);
         console.log(`Token Amount Sold: ${event.tokenAmount}`);
         console.log(`SOL Amount Received: ${event.solAmount}`);
+        console.log(`Price: ${event.price}`);
         console.log(`Timestamp: ${event.timestamp}`);
       }
     }
