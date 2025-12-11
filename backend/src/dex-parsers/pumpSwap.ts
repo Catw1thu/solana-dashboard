@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import bs58 from 'bs58';
+import e from 'express';
 
 export interface PumpSwapCreatePoolEvent {
   type: 'CREATE_POOL';
@@ -9,6 +10,8 @@ export interface PumpSwapCreatePoolEvent {
   creator: string;
   baseMint: string;
   quoteMint: string;
+  baseDecimals: number;
+  quoteDecimals: number;
   baseAmount: bigint;
   quoteAmount: bigint;
   timestamp: number;
@@ -149,6 +152,8 @@ export class PumpSwapParser {
         creator: allAccounts[accountIndices[2]],
         baseMint: allAccounts[accountIndices[3]],
         quoteMint: allAccounts[accountIndices[4]],
+        baseDecimals: 6,
+        quoteDecimals: 9,
         baseAmount,
         quoteAmount,
         timestamp: Date.now(),
@@ -250,7 +255,6 @@ export class PumpSwapParser {
     event: PumpSwapEvent,
     innerInstructions: any[],
   ) {
-    if (event.type !== 'BUY' && event.type !== 'SELL') return;
     for (const innerIx of innerInstructions) {
       const data = Buffer.from(innerIx.data);
       if (data.length < 16) continue;
@@ -267,6 +271,12 @@ export class PumpSwapParser {
         discriminator.equals(this.DISCRIMINATORS.SELL_EVENT)
       ) {
         this.mergeTradeData(event, data);
+      }
+      if (
+        event.type === 'CREATE_POOL' &&
+        discriminator.equals(this.DISCRIMINATORS.CREATE_POOL_EVENT)
+      ) {
+        this.mergeCreatePoolData(event, data);
       }
     }
   }
@@ -297,6 +307,19 @@ export class PumpSwapParser {
       }
     } catch (e) {
       console.error('Failed to merge Trade Event data', e);
+    }
+  }
+
+  private mergeCreatePoolData(event: PumpSwapCreatePoolEvent, data: Buffer) {
+    // Disc(16) + Timestamp(8) + Index(2) + Creator(32) + BaseMint(32) + QuoteMint(32)
+    // Offset = 16 + 8 + 2 + 32 + 32 + 32 = 122
+    // BaseDecimals: offset 122 (u8)
+    // QuoteDecimals: offset 123 (u8)
+    try {
+      event.baseDecimals = data.readUInt8(122);
+      event.quoteDecimals = data.readUInt8(123);
+    } catch (e) {
+      console.error('Failed to merge CreatePool Event data', e);
     }
   }
 }
