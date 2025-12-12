@@ -112,7 +112,7 @@ export class PumpSwapParser {
       if (draftEvent) {
         const innerIx = innerIxs.find((inner) => inner.index === i);
         if (innerIx && innerIx.instructions) {
-          this.scanAndMergeInnerEvents(draftEvent, innerIx.instructions);
+          this.parseAndMergeInnerEvents(draftEvent, innerIx.instructions);
         }
         return draftEvent;
       }
@@ -138,7 +138,7 @@ export class PumpSwapParser {
     // base_mint: accounts[3]
     // quote_mint: accounts[4]
 
-    if (data.length < 18 || accountIndices.length < 5) return null;
+    if (data.length < 18 || accountIndices.length < 11) return null;
 
     try {
       const baseAmount = data.readBigUInt64LE(2);
@@ -180,7 +180,7 @@ export class PumpSwapParser {
     // baseMint: accounts[3]
     // quoteMint: accounts[5]
 
-    if (data.length < 16 || accountIndices.length < 5) return null;
+    if (data.length < 16 || accountIndices.length < 13) return null;
 
     try {
       const baseAmountOut = data.readBigUInt64LE(0);
@@ -224,7 +224,7 @@ export class PumpSwapParser {
     // baseMint: accounts[3]
     // quoteMint: accounts[4]
 
-    if (data.length < 16 || accountIndices.length < 5) return null;
+    if (data.length < 16 || accountIndices.length < 13) return null;
 
     try {
       const baseAmountIn = data.readBigUint64LE(0);
@@ -251,11 +251,8 @@ export class PumpSwapParser {
     }
   }
 
-  private scanAndMergeInnerEvents(
-    event: PumpSwapEvent,
-    innerInstructions: any[],
-  ) {
-    for (const innerIx of innerInstructions) {
+  private parseAndMergeInnerEvents(event: PumpSwapEvent, innerIxs: any[]) {
+    for (const innerIx of innerIxs) {
       const data = Buffer.from(innerIx.data);
       if (data.length < 16) continue;
       const discriminator = data.subarray(0, 16);

@@ -5,6 +5,7 @@ import Client, {
 } from '@triton-one/yellowstone-grpc';
 import { ConfigService } from '@nestjs/config';
 import { PumpSwapParser } from '../dex-parsers/pumpSwap';
+import { PumpFunParser } from '../dex-parsers/pumpFun';
 
 @Injectable()
 export class GrpcService implements OnModuleInit {
@@ -16,6 +17,7 @@ export class GrpcService implements OnModuleInit {
   constructor(
     private configService: ConfigService,
     private pumpSwapParser: PumpSwapParser,
+    private pumpFunParser: PumpFunParser,
   ) {}
 
   async onModuleInit() {
@@ -50,11 +52,14 @@ export class GrpcService implements OnModuleInit {
       accounts: {},
       slots: {},
       transactions: {
-        raydium: {
+        pumpSwap: {
           vote: false,
           failed: false,
           signature: undefined,
-          accountInclude: ['pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'],
+          accountInclude: [
+            'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA', // pumpSwap Amm
+            '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', // pump.fun
+          ],
           accountExclude: [],
           accountRequired: [],
         },
@@ -102,8 +107,21 @@ export class GrpcService implements OnModuleInit {
   }
 
   private parseTx(tx: any) {
-    const event = this.pumpSwapParser.parseTx(tx);
+    const migrateEvent = this.pumpFunParser.parseTx(tx);
+    if (migrateEvent) {
+      this.trackedPools.add(migrateEvent.pool);
+      console.log(`\n🎉 [PUMP GRADUATION] PUMP迁移!`);
+      console.log(`Slot: ${migrateEvent.slot}`);
+      console.log(`Tx: https://solscan.io/tx/${migrateEvent.signature}`);
+      console.log(`Token Mint: ${migrateEvent.mint}`);
+      console.log(`Pool: ${migrateEvent.pool}`);
+      console.log(`Sol Amount: ${migrateEvent.solAmount}`);
+      console.log(`Mint Amount: ${migrateEvent.tokenAmount}`);
+      console.log(`Timestamp: ${migrateEvent.timestamp}`);
+      return;
+    }
 
+    const event = this.pumpSwapParser.parseTx(tx);
     if (event) {
       if (event.type === 'CREATE_POOL') {
         this.trackedPools.add(event.pool);
@@ -116,8 +134,10 @@ export class GrpcService implements OnModuleInit {
         console.log(`Token: ${event.baseMint}`);
         console.log(`Init Liquidity: ${event.quoteAmount}`);
         console.log(`Timestamp: ${event.timestamp}`);
+        console.log(`BaseDecimals: ${event.baseDecimals}`);
+        console.log(`QuoteDecimals: ${event.quoteDecimals}`);
       }
-      if (event.type === 'BUY') {
+      if (event.type === 'BUY' && this.trackedPools.has(event.pool)) {
         console.log(`\n🔴 [PUMP SELL] 发生卖出交易!`);
         console.log(`Slot: ${event.slot}`);
         console.log(`Tx: https://solscan.io/tx/${event.signature}`);
@@ -142,7 +162,7 @@ export class GrpcService implements OnModuleInit {
           console.log(`Price: ${price} Token per Sol`);
         }
       }
-      if (event.type === 'SELL') {
+      if (event.type === 'SELL' && this.trackedPools.has(event.pool)) {
         console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
         console.log(`Slot: ${event.slot}`);
         console.log(`Tx: https://solscan.io/tx/${event.signature}`);
