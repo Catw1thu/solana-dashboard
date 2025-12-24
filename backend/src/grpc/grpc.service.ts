@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Client, {
   CommitmentLevel,
   SubscribeRequest,
@@ -8,9 +8,12 @@ import { PumpSwapParser } from '../dex-parsers/pumpSwap';
 import { PumpFunParser } from '../dex-parsers/pumpFun';
 
 @Injectable()
-export class GrpcService implements OnModuleInit {
+export class GrpcService implements OnModuleInit, OnModuleDestroy {
   private client: Client;
   private isRunning = false;
+  private stream: any;
+  private pingInterval: NodeJS.Timeout | null = null;
+
   private poolDecimals = new Map<string, number>();
   private trackedPools = new Set<string>();
 
@@ -23,6 +26,8 @@ export class GrpcService implements OnModuleInit {
   async onModuleInit() {
     await this.connect();
   }
+
+  async onModuleDestroy() {}
 
   async connect() {
     const grpc_endpoint =
@@ -46,7 +51,7 @@ export class GrpcService implements OnModuleInit {
     if (this.isRunning) return;
     this.isRunning = true;
 
-    const stream = await this.client.subscribe();
+    this.stream = await this.client.subscribe();
 
     const request: SubscribeRequest = {
       accounts: {},
@@ -74,7 +79,7 @@ export class GrpcService implements OnModuleInit {
     };
 
     await new Promise<void>((resolve, reject) => {
-      stream.write(request, (err) => {
+      this.stream.write(request, (err) => {
         if (err === null || err === undefined) {
           resolve();
         } else {
@@ -82,28 +87,57 @@ export class GrpcService implements OnModuleInit {
         }
       });
     }).catch((reason) => {
-      console.error(
-        `Failed to write raydium request to gRPC stream: ${reason}`,
-      );
+      console.error(`Failed to write request to gRPC stream: ${reason}`);
       throw reason;
     });
 
     console.log('🚀 Listening for PumpSwap transactions...');
-    stream.on('data', (data) => {
+    this.startPing();
+    this.stream.on('data', (data) => {
       if (data.transaction) {
         this.parseTx(data.transaction);
       }
     });
 
-    stream.on('error', (error) => {
+    this.stream.on('error', (error) => {
       console.error(`gRPC stream error: ${error}`);
       this.isRunning = false;
+      this.stopPing();
     });
 
-    stream.on('end', () => {
+    this.stream.on('end', () => {
       console.log('gRPC stream ended.');
       this.isRunning = false;
+      this.stopPing();
     });
+  }
+
+  private startPing() {
+    if (this.pingInterval) clearInterval(this.pingInterval);
+
+    this.pingInterval = setInterval(() => {
+      if (this.stream) {
+        const pingRequest: SubscribeRequest = {
+          accounts: {},
+          slots: {},
+          transactions: {},
+          transactionsStatus: {},
+          blocks: {},
+          blocksMeta: {},
+          entry: {},
+          accountsDataSlice: [],
+          ping: { id: 1 },
+        };
+        this.stream.write(pingRequest);
+      }
+    }, 5000);
+  }
+
+  private stopPing() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
   }
 
   private parseTx(tx: any) {
@@ -126,7 +160,7 @@ export class GrpcService implements OnModuleInit {
       if (event.type === 'CREATE_POOL') {
         this.trackedPools.add(event.pool);
         this.poolDecimals.set(event.pool, event.baseDecimals);
-        console.log(`\n🎉 [PUMP GRADUATION] 新池子诞生!`);
+        console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
         console.log(`Slot: ${event.slot}`);
         console.log(`Tx: https://solscan.io/tx/${event.signature}`);
         console.log(`Pool: ${event.pool}`);
