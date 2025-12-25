@@ -158,27 +158,27 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     const event = this.pumpSwapParser.parseTx(tx);
     if (event) {
       if (event.type === 'CREATE_POOL') {
-        this.trackedPools.add(event.pool);
-        this.poolDecimals.set(event.pool, event.baseDecimals);
-        console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
-        console.log(`Slot: ${event.slot}`);
-        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
-        console.log(`Pool: ${event.pool}`);
-        console.log(`User: ${event.creator}`);
-        console.log(`Token: ${event.baseMint}`);
-        console.log(`Init Liquidity: ${event.quoteAmount}`);
-        console.log(`Timestamp: ${event.timestamp}`);
-        console.log(`BaseDecimals: ${event.baseDecimals}`);
-        console.log(`QuoteDecimals: ${event.quoteDecimals}`);
+        // this.trackedPools.add(event.pool);
+        // this.poolDecimals.set(event.pool, event.baseDecimals);
+        // console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
+        // console.log(`Slot: ${event.slot}`);
+        // console.log(`Tx: https://solscan.io/tx/${event.signature}`);
+        // console.log(`Pool: ${event.pool}`);
+        // console.log(`User: ${event.creator}`);
+        // console.log(`Token: ${event.baseMint}`);
+        // console.log(`Init Liquidity: ${event.quoteAmount}`);
+        // console.log(`Timestamp: ${event.timestamp}`);
+        // console.log(`BaseDecimals: ${event.baseDecimals}`);
+        // console.log(`QuoteDecimals: ${event.quoteDecimals}`);
       }
       if (event.type === 'BUY' && this.trackedPools.has(event.pool)) {
-        console.log(`\n🔴 [PUMP SELL] 发生卖出交易!`);
+        console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
         console.log(`Slot: ${event.slot}`);
         console.log(`Tx: https://solscan.io/tx/${event.signature}`);
         console.log(`Pool: ${event.pool}`);
         console.log(`User: ${event.user}`);
-        console.log(`SOL Amount Received: ${event.tokenAmount}`);
-        console.log(`Token Amount Sold: ${event.solAmount}`);
+        console.log(`SOL Amount Spent: ${event.tokenAmount}`);
+        console.log(`Token Amount Bought: ${event.solAmount}`);
         console.log(`Timestamp: ${event.timestamp}`);
         if (this.trackedPools.has(event.pool)) {
           const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
@@ -197,14 +197,13 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         }
       }
       if (event.type === 'SELL' && this.trackedPools.has(event.pool)) {
-        console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
+        console.log(`\n🔴 [PUMP SELL] 发生卖出交易!`);
         console.log(`Slot: ${event.slot}`);
         console.log(`Tx: https://solscan.io/tx/${event.signature}`);
         console.log(`Pool: ${event.pool}`);
         console.log(`User: ${event.user}`);
-        console.log(`SOL Amount Spent: ${event.tokenAmount}`);
-        console.log(`Token Amount Bought: ${event.solAmount}`);
-        console.log(`Price: ${event.price}`);
+        console.log(`SOL Amount Received: ${event.tokenAmount}`);
+        console.log(`Token Amount Sold: ${event.solAmount}`);
         console.log(`Timestamp: ${event.timestamp}`);
         if (this.trackedPools.has(event.pool)) {
           const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
