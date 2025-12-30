@@ -6,6 +6,7 @@ import Client, {
 import { ConfigService } from '@nestjs/config';
 import { PumpSwapParser } from '../dex-parsers/pumpSwap';
 import { PumpFunParser } from '../dex-parsers/pumpFun';
+import { RedisService } from 'src/redis/redis.service';
 
 @Injectable()
 export class GrpcService implements OnModuleInit, OnModuleDestroy {
@@ -21,13 +22,29 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     private configService: ConfigService,
     private pumpSwapParser: PumpSwapParser,
     private pumpFunParser: PumpFunParser,
+    private redisService: RedisService,
   ) {}
 
   async onModuleInit() {
+    await this.loadStateFromRedis();
     await this.connect();
   }
 
   async onModuleDestroy() {}
+
+  async loadStateFromRedis() {
+    console.log('🔄 Loading state from Redis...');
+
+    const trackedPools = await this.redisService.getAllTrackedPools();
+    trackedPools.forEach((p) => this.trackedPools.add(p));
+
+    const decimalsMap = await this.redisService.getAllPoolDecimals();
+    for (const [pool, decimals] of Object.entries(decimalsMap)) {
+      this.poolDecimals.set(pool, decimals);
+    }
+
+    console.log(`✅ State Loaded: Monitoring ${this.trackedPools.size} pools.`);
+  }
 
   async connect() {
     const grpc_endpoint =
@@ -143,8 +160,15 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
   private parseTx(tx: any) {
     const migrateEvent = this.pumpFunParser.parseTx(tx);
     if (migrateEvent) {
-      this.trackedPools.add(migrateEvent.pool);
-      console.log(`\n🎉 [PUMP GRADUATION] PUMP迁移!`);
+      if (!this.trackedPools.has(migrateEvent.pool)) {
+        //更新内存
+        this.trackedPools.add(migrateEvent.pool);
+        this.poolDecimals.set(migrateEvent.pool, 6);
+        //异步写入redis
+        this.redisService.addTrackedPool(migrateEvent.pool);
+        this.redisService.setPoolDecimals(migrateEvent.pool, 6);
+      }
+      console.log(`\n🎓 [PUMP GRADUATION] PUMP毕业迁移!`);
       console.log(`Slot: ${migrateEvent.slot}`);
       console.log(`Tx: https://solscan.io/tx/${migrateEvent.signature}`);
       console.log(`Token Mint: ${migrateEvent.mint}`);
@@ -158,8 +182,12 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     const event = this.pumpSwapParser.parseTx(tx);
     if (event) {
       if (event.type === 'CREATE_POOL') {
-        // this.trackedPools.add(event.pool);
-        // this.poolDecimals.set(event.pool, event.baseDecimals);
+        // if (!this.trackedPools.has(event.pool)) {
+        //   this.trackedPools.add(event.pool);
+        //   this.poolDecimals.set(event.pool, event.baseDecimals);
+        //   this.redisService.addTrackedPool(event.pool);
+        //   this.redisService.setPoolDecimals(event.pool, event.baseDecimals);
+        // }
         // console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
         // console.log(`Slot: ${event.slot}`);
         // console.log(`Tx: https://solscan.io/tx/${event.signature}`);

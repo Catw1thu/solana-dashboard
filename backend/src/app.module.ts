@@ -5,10 +5,17 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PumpSwapParser } from './dex-parsers/pumpSwap';
 import { PumpFunParser } from './dex-parsers/pumpFun';
+import { RedisService } from './redis/redis.service';
 
 @Module({
   imports: [ConfigModule.forRoot()],
   controllers: [AppController],
-  providers: [AppService, GrpcService, PumpSwapParser, PumpFunParser],
+  providers: [
+    AppService,
+    GrpcService,
+    PumpSwapParser,
+    PumpFunParser,
+    RedisService,
+  ],
 })
 export class AppModule {}
