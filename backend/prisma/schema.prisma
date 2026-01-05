@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 池子元数据
+model Pool {
+  address       String   @id   // 池子地址
+
+  baseMint      String         // 基础代币地址
+  quoteMint     String         // 计价代币地址
+
+  baseDecimals  Int
+  quoteDecimals Int
+
+  trades        Trade[]
+}
+
+// 交易记录(时序数据)
+model Trade {
+  // 联合主键通常是 (txHash, logIndex)，但为了简单我们先用自增ID或复合索引
+  // TimescaleDB 要求时间列必须在主键里
+
+  time DateTime
+
+  txHash String
+
+  poolAddress String
+  pool Pool @relation(fields: [poolAddress], references: [address])
+
+  type String      // 交易类型:
+
+  price Float
+  baseAmount Float
+  quoteAmount Float
+
+  // 复合主键：保证唯一性，同时满足时序数据库要求
+  @@id([time, txHash])
+
+  // 核心索引：前端最常查的是 "查某个池子最近 N 条交易"
+  // desc 排序是为了快速拿到最新数据
+  @@index([poolAddress, time(sort: Desc)])
+}

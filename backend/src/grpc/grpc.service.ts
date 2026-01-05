@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { PumpSwapParser } from '../dex-parsers/pumpSwap';
 import { PumpFunParser } from '../dex-parsers/pumpFun';
 import { RedisService } from 'src/redis/redis.service';
+import { DatabaseService } from 'src/database/database.service';
 
 @Injectable()
 export class GrpcService implements OnModuleInit, OnModuleDestroy {
@@ -23,6 +24,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     private pumpSwapParser: PumpSwapParser,
     private pumpFunParser: PumpFunParser,
     private redisService: RedisService,
+    private databaseService: DatabaseService,
   ) {}
 
   async onModuleInit() {
@@ -157,7 +159,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private parseTx(tx: any) {
+  private async parseTx(tx: any) {
     const migrateEvent = this.pumpFunParser.parseTx(tx);
     if (migrateEvent) {
       if (!this.trackedPools.has(migrateEvent.pool)) {
@@ -168,14 +170,23 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         this.redisService.addTrackedPool(migrateEvent.pool);
         this.redisService.setPoolDecimals(migrateEvent.pool, 6);
       }
-      console.log(`\n🎓 [PUMP GRADUATION] PUMP毕业迁移!`);
-      console.log(`Slot: ${migrateEvent.slot}`);
-      console.log(`Tx: https://solscan.io/tx/${migrateEvent.signature}`);
-      console.log(`Token Mint: ${migrateEvent.mint}`);
-      console.log(`Pool: ${migrateEvent.pool}`);
-      console.log(`Sol Amount: ${migrateEvent.solAmount}`);
-      console.log(`Mint Amount: ${migrateEvent.tokenAmount}`);
-      console.log(`Timestamp: ${migrateEvent.timestamp}`);
+
+      // console.log(`\n🎓 [PUMP GRADUATION] PUMP毕业迁移!`);
+      // console.log(`Slot: ${migrateEvent.slot}`);
+      // console.log(`Tx: https://solscan.io/tx/${migrateEvent.signature}`);
+      // console.log(`Token Mint: ${migrateEvent.mint}`);
+      // console.log(`Pool: ${migrateEvent.pool}`);
+      // console.log(`Sol Amount: ${migrateEvent.solAmount}`);
+      // console.log(`Mint Amount: ${migrateEvent.tokenAmount}`);
+      // console.log(`Timestamp: ${migrateEvent.timestamp}`);
+
+      await this.databaseService.savePool({
+        address: migrateEvent.pool,
+        baseMint: migrateEvent.mint,
+        quoteMint: 'So11111111111111111111111111111111111111112',
+        baseDecimals: 6,
+        quoteDecimals: 9,
+      });
       return;
     }
 
@@ -199,55 +210,54 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         // console.log(`BaseDecimals: ${event.baseDecimals}`);
         // console.log(`QuoteDecimals: ${event.quoteDecimals}`);
       }
-      if (event.type === 'BUY' && this.trackedPools.has(event.pool)) {
-        console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
-        console.log(`Slot: ${event.slot}`);
-        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
-        console.log(`Pool: ${event.pool}`);
-        console.log(`User: ${event.user}`);
-        console.log(`SOL Amount Spent: ${event.tokenAmount}`);
-        console.log(`Token Amount Bought: ${event.solAmount}`);
-        console.log(`Timestamp: ${event.timestamp}`);
-        if (this.trackedPools.has(event.pool)) {
-          const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
-          const quoteDecimals = 9;
+      if (
+        (event.type === 'BUY' || event.type === 'SELL') &&
+        this.trackedPools.has(event.pool)
+      ) {
+        // console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
+        // console.log(`Slot: ${event.slot}`);
+        // console.log(`Tx: https://solscan.io/tx/${event.signature}`);
+        // console.log(`Pool: ${event.pool}`);
+        // console.log(`User: ${event.user}`);
+        // console.log(`SOL Amount Spent: ${event.tokenAmount}`);
+        // console.log(`Token Amount Bought: ${event.solAmount}`);
+        // console.log(`Timestamp: ${event.timestamp}`);
+        // if (this.trackedPools.has(event.pool)) {
+        //   const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
+        //   const quoteDecimals = 9;
 
-          const normalizedTokenAmount =
-            Number(event.tokenAmount) / 10 ** baseDecimals;
-          const normalizedSolAmount =
-            Number(event.solAmount) / 10 ** quoteDecimals;
-          const price = normalizedTokenAmount / normalizedSolAmount;
-          console.log(
-            `Normalized Token Amount Bought: ${normalizedTokenAmount}`,
-          );
-          console.log(`Normalized SOL Amount Spent: ${normalizedSolAmount}`);
-          console.log(`Price: ${price} Token per Sol`);
-        }
-      }
-      if (event.type === 'SELL' && this.trackedPools.has(event.pool)) {
-        console.log(`\n🔴 [PUMP SELL] 发生卖出交易!`);
-        console.log(`Slot: ${event.slot}`);
-        console.log(`Tx: https://solscan.io/tx/${event.signature}`);
-        console.log(`Pool: ${event.pool}`);
-        console.log(`User: ${event.user}`);
-        console.log(`SOL Amount Received: ${event.tokenAmount}`);
-        console.log(`Token Amount Sold: ${event.solAmount}`);
-        console.log(`Timestamp: ${event.timestamp}`);
-        if (this.trackedPools.has(event.pool)) {
-          const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
-          const quoteDecimals = 9;
+        //   const normalizedTokenAmount =
+        //     Number(event.tokenAmount) / 10 ** baseDecimals;
+        //   const normalizedSolAmount =
+        //     Number(event.solAmount) / 10 ** quoteDecimals;
+        //   const price = normalizedSolAmount / normalizedTokenAmount;
+        //   console.log(
+        //     `Normalized Token Amount Bought: ${normalizedTokenAmount}`,
+        //   );
+        //   console.log(`Normalized SOL Amount Spent: ${normalizedSolAmount}`);
+        //   console.log(`Price: ${price} Token per Sol`);
+        // }
 
-          const normalizedTokenAmount =
-            Number(event.tokenAmount) / 10 ** baseDecimals;
-          const normalizedSolAmount =
-            Number(event.solAmount) / 10 ** quoteDecimals;
-          const price = normalizedTokenAmount / normalizedSolAmount;
-          console.log(
-            `Normalized Token Amount Bought: ${normalizedTokenAmount}`,
-          );
-          console.log(`Normalized SOL Amount Spent: ${normalizedSolAmount}`);
-          console.log(`Price: ${price} Token per Sol`);
+        const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
+        const quoteDecimals = 9;
+        const baseFactor = Math.pow(10, baseDecimals);
+        const quoteFactor = Math.pow(10, quoteDecimals);
+        const baseAmount = Number(event.tokenAmount) / baseFactor;
+        const quoteAmount = Number(event.solAmount) / quoteFactor;
+        let price = 0;
+        if (baseAmount > 0) {
+          price = quoteAmount / baseAmount;
         }
+
+        await this.databaseService.saveTrade({
+          txHash: event.signature,
+          time: new Date(event.timestamp),
+          poolAddress: event.pool,
+          type: event.type,
+          price,
+          baseAmount,
+          quoteAmount,
+        });
       }
     }
   }

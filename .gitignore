@@ -1,4 +1,29 @@
-node_modules
-dist
+# --- 1. 依赖与构建 ---
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- 2. 环境变量 (隐私!) ---
 .env
+.env.test
+.env.production
+# 注意: 你可以提交一个 .env.example (不含真实密码) 给别人参考
+
+# --- 3. 数据库数据 (Docker 挂载卷) ---
+# 对应 docker-compose.yml 里的 volumes 路径
+data/
+postgres-data/
+redis-data/
+
+# --- 4. IDE 配置 (可选，建议忽略) ---
+.vscode/
+.idea/
+*.swp
 .DS_Store
+
+# --- 5. Prisma ---
+# 忽略生成的 Client (因为它在 node_modules 里)
+# 但保留 schema.prisma 和 migrations 文件夹

@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import bs58 from 'bs58';
-import e from 'express';
 
 export interface PumpSwapCreatePoolEvent {
   type: 'CREATE_POOL';
