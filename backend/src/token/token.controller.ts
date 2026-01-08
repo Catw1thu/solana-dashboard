@@ -1,0 +1,47 @@
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { TokenService } from './token.service';
+
+@Controller('/api/token')
+export class TokenController {
+  constructor(private readonly tokenService: TokenService) {}
+
+  // GET /api/token/pools
+  @Get('pools')
+  async getPools() {
+    return this.tokenService.getPools();
+  }
+
+  // GET /api/token/candles/:poolAddress
+  @Get('candles/:poolAddress')
+  async getCandles(
+    @Param('address') poolAddress: string,
+    @Query('resolution') resolution = '1m',
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const resolutionMap = {
+      '1m': '1 minute',
+      '5m': '5 minutes',
+      '30m': '30 minutes',
+      '1h': '1 hour',
+      '4h': '4 hours',
+      '1d': '1 day',
+    };
+    const dbResolution = resolutionMap[resolution] || '1 minute';
+    const fromDate = from ? new Date(Number(from) * 1000) : undefined;
+    const toDate = to ? new Date(Number(to) * 1000) : undefined;
+
+    return this.tokenService.getOHLCV(
+      poolAddress,
+      dbResolution,
+      fromDate,
+      toDate,
+    );
+  }
+
+  // GET /api/token/trades/:poolAddress
+  @Get('trades/:poolAddress')
+  async getTrades(@Param('address') poolAddress: string) {
+    return this.tokenService.getTrades(poolAddress);
+  }
+}

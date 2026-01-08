@@ -6,6 +6,8 @@ import { AppService } from './app.service';
 import { PumpSwapParser } from './dex-parsers/pumpSwap';
 import { PumpFunParser } from './dex-parsers/pumpFun';
 import { RedisService } from './redis/redis.service';
+import { DatabaseService } from './database/database.service';
+import { TokenService } from './token/token.service';
 
 @Module({
   imports: [ConfigModule.forRoot()],
@@ -16,6 +18,8 @@ import { RedisService } from './redis/redis.service';
     PumpSwapParser,
     PumpFunParser,
     RedisService,
+    DatabaseService,
+    TokenService,
   ],
 })
 export class AppModule {}
