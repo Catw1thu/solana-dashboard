@@ -9,12 +9,22 @@ import { PumpFunParser } from '../dex-parsers/pumpFun';
 import { RedisService } from 'src/redis/redis.service';
 import { DatabaseService } from 'src/database/database.service';
 
+enum ConnectionState {
+  DISCONNECTED,
+  CONNECTING,
+  CONNECTED,
+  RECONNECTING,
+}
+
 @Injectable()
 export class GrpcService implements OnModuleInit, OnModuleDestroy {
   private client: Client;
-  private isRunning = false;
   private stream: any;
   private pingInterval: NodeJS.Timeout | null = null;
+  private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
+  private readonly MAX_RETRIES = 3;
+  private reconnectAttempts = 0;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   private poolDecimals = new Map<string, number>();
   private trackedPools = new Set<string>();
@@ -32,7 +42,12 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     await this.connect();
   }
 
-  async onModuleDestroy() {}
+  async onModuleDestroy() {
+    this.connectionState = ConnectionState.DISCONNECTED;
+    this.clearReconnectTimeout();
+    this.stopPing();
+    this.closeStream();
+  }
 
   async loadStateFromRedis() {
     console.log('🔄 Loading state from Redis...');
@@ -49,6 +64,13 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
   }
 
   async connect() {
+    if (
+      this.connectionState === ConnectionState.CONNECTING ||
+      this.connectionState === ConnectionState.CONNECTED
+    ) {
+      return;
+    }
+    this.connectionState = ConnectionState.CONNECTING;
     const grpc_endpoint =
       this.configService.get<string>('GRPC_ENDPOINT') ??
       'solana-yellowstone-grpc.publicnode.com:443';
@@ -58,18 +80,17 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      const version = await this.client.getVersion();
-      console.log(`✅ gRPC Connection successful! Version: ${version}`);
-      this.startStream();
+      await this.startStream();
+      this.connectionState = ConnectionState.CONNECTED;
+      this.reconnectAttempts = 0;
+      this.startPing();
+      this.bindStream();
     } catch (error) {
-      console.error(`❌ gRPC Connection failed: ${error}`);
+      this.handleDisconnect();
     }
   }
 
-  async startStream() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-
+  private async startStream() {
     this.stream = await this.client.subscribe();
 
     const request: SubscribeRequest = {
@@ -109,9 +130,22 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
       console.error(`Failed to write request to gRPC stream: ${reason}`);
       throw reason;
     });
-
     console.log('🚀 Listening for PumpSwap transactions...');
-    this.startPing();
+  }
+
+  private closeStream() {
+    if (this.stream) {
+      this.stream.removeAllListeners();
+      try {
+        this.stream.destroy();
+      } catch (e) {
+        // ignore destroy errors
+      }
+      this.stream = null;
+    }
+  }
+
+  private bindStream() {
     this.stream.on('data', (data) => {
       if (data.transaction) {
         this.parseTx(data.transaction);
@@ -120,15 +154,51 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
 
     this.stream.on('error', (error) => {
       console.error(`gRPC stream error: ${error}`);
-      this.isRunning = false;
-      this.stopPing();
+      this.handleDisconnect();
     });
 
     this.stream.on('end', () => {
       console.log('gRPC stream ended.');
-      this.isRunning = false;
-      this.stopPing();
+      this.handleDisconnect();
     });
+  }
+
+  private handleDisconnect() {
+    if (
+      this.connectionState === ConnectionState.RECONNECTING ||
+      this.connectionState === ConnectionState.DISCONNECTED
+    ) {
+      return;
+    }
+    this.connectionState = ConnectionState.RECONNECTING;
+    this.stopPing();
+    this.closeStream();
+    this.reconnect();
+  }
+
+  private reconnect() {
+    if (this.reconnectAttempts >= this.MAX_RETRIES) {
+      console.error(`🚨 Max reconnect attempts reached. Giving up.`);
+      this.connectionState = ConnectionState.DISCONNECTED;
+      return;
+    }
+    this.reconnectAttempts++;
+    this.clearReconnectTimeout();
+
+    console.log(
+      `🔄 Reconnecting in 3s (attempt ${this.reconnectAttempts}/${this.MAX_RETRIES})...`,
+    );
+    this.reconnectTimeout = setTimeout(async () => {
+      this.connectionState = ConnectionState.DISCONNECTED;
+      await this.connect();
+    }, 3000);
+  }
+
+  private clearReconnectTimeout() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
   }
 
   private startPing() {
