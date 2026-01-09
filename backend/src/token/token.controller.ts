@@ -14,7 +14,7 @@ export class TokenController {
   // GET /api/token/candles/:poolAddress
   @Get('candles/:poolAddress')
   async getCandles(
-    @Param('address') poolAddress: string,
+    @Param('poolAddress') poolAddress: string,
     @Query('resolution') resolution = '1m',
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -41,7 +41,7 @@ export class TokenController {
 
   // GET /api/token/trades/:poolAddress
   @Get('trades/:poolAddress')
-  async getTrades(@Param('address') poolAddress: string) {
+  async getTrades(@Param('poolAddress') poolAddress: string) {
     return this.tokenService.getTrades(poolAddress);
   }
 }

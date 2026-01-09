@@ -9,9 +9,11 @@ import { RedisService } from './redis/redis.service';
 import { DatabaseService } from './database/database.service';
 import { TokenService } from './token/token.service';
 
+import { TokenController } from './token/token.controller';
+
 @Module({
   imports: [ConfigModule.forRoot()],
-  controllers: [AppController],
+  controllers: [AppController, TokenController],
   providers: [
     AppService,
     GrpcService,

@@ -148,7 +148,9 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
   private bindStream() {
     this.stream.on('data', (data) => {
       if (data.transaction) {
-        this.parseTx(data.transaction);
+        this.parseTx(data.transaction).catch((e) =>
+          console.error(`Failed to parse transaction: ${e.message}`),
+        );
       }
     });
 
@@ -249,6 +251,18 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
       // console.log(`Sol Amount: ${migrateEvent.solAmount}`);
       // console.log(`Mint Amount: ${migrateEvent.tokenAmount}`);
       // console.log(`Timestamp: ${migrateEvent.timestamp}`);
+      console.log(
+        [
+          `🎓 [MIGRATE]`,
+          `  - Tx       : https://solscan.io/tx/${migrateEvent.signature}`,
+          `  - Slot     : ${migrateEvent.slot}`,
+          `  - Mint     : ${migrateEvent.mint}`,
+          `  - Pool     : ${migrateEvent.pool}`,
+          `  - SOL      : ${migrateEvent.solAmount}`,
+          `  - Token    : ${migrateEvent.tokenAmount}`,
+          `  - Time     : ${new Date(migrateEvent.timestamp).toISOString()}`,
+        ].join('\n'),
+      );
 
       await this.databaseService.savePool({
         address: migrateEvent.pool,
@@ -269,6 +283,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         //   this.redisService.addTrackedPool(event.pool);
         //   this.redisService.setPoolDecimals(event.pool, event.baseDecimals);
         // }
+
         // console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
         // console.log(`Slot: ${event.slot}`);
         // console.log(`Tx: https://solscan.io/tx/${event.signature}`);
@@ -279,6 +294,19 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         // console.log(`Timestamp: ${event.timestamp}`);
         // console.log(`BaseDecimals: ${event.baseDecimals}`);
         // console.log(`QuoteDecimals: ${event.quoteDecimals}`);
+        console.log(
+          [
+            `🎉 [CREATE]`,
+            `  - Tx       : https://solscan.io/tx/${event.signature}`,
+            `  - Slot     : ${event.slot}`,
+            `  - User     : ${event.creator}`,
+            `  - Mint     : ${event.baseMint}`,
+            `  - Pool     : ${event.pool}`,
+            `  - Liquidity: ${event.quoteAmount}`,
+            `  - Base/Qt  : ${event.baseDecimals} / ${event.quoteDecimals}`,
+            `  - Time     : ${new Date(event.timestamp).toISOString()}`,
+          ].join('\n'),
+        );
       }
       if (
         (event.type === 'BUY' || event.type === 'SELL') &&
@@ -292,21 +320,6 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         // console.log(`SOL Amount Spent: ${event.tokenAmount}`);
         // console.log(`Token Amount Bought: ${event.solAmount}`);
         // console.log(`Timestamp: ${event.timestamp}`);
-        // if (this.trackedPools.has(event.pool)) {
-        //   const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
-        //   const quoteDecimals = 9;
-
-        //   const normalizedTokenAmount =
-        //     Number(event.tokenAmount) / 10 ** baseDecimals;
-        //   const normalizedSolAmount =
-        //     Number(event.solAmount) / 10 ** quoteDecimals;
-        //   const price = normalizedSolAmount / normalizedTokenAmount;
-        //   console.log(
-        //     `Normalized Token Amount Bought: ${normalizedTokenAmount}`,
-        //   );
-        //   console.log(`Normalized SOL Amount Spent: ${normalizedSolAmount}`);
-        //   console.log(`Price: ${price} Token per Sol`);
-        // }
 
         const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
         const quoteDecimals = 9;
@@ -318,6 +331,21 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         if (baseAmount > 0) {
           price = quoteAmount / baseAmount;
         }
+
+        console.log(
+          [
+            `${event.type === 'BUY' ? '🟢 [BUY]' : '🔴 [SELL]'}`,
+            `  - Tx       : https://solscan.io/tx/${event.signature}`,
+            `  - Slot     : ${event.slot}`,
+            `  - User     : ${event.user}`,
+            `  - Mint     : ${event.baseMint}`,
+            `  - Pool     : ${event.pool}`,
+            `  - SOL      : ${quoteAmount}`,
+            `  - Token    : ${baseAmount}`,
+            `  - Price    : ${price}`,
+            `  - Time     : ${new Date(event.timestamp).toISOString()}`,
+          ].join('\n'),
+        );
 
         await this.databaseService.saveTrade({
           txHash: event.signature,
