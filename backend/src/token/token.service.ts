@@ -60,8 +60,8 @@ export class TokenService {
         MAX(price) as high,
         Min(price) as low,
         LAST(price, time) as close,
-        SUM("baseAmount) as volume
-        FROM "Trade
+        SUM("baseAmount") as volume
+        FROM "Trade"
         WHERE "poolAddress" = ${poolAddress}
         AND time >= ${startTime} AND time <= ${endTime}
         GROUP BY bucket
