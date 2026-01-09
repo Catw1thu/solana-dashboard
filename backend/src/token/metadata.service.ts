@@ -87,6 +87,26 @@ export class MetadataService {
   ): Promise<{ name: string; symbol: string; uri: string } | null> {
     try {
       const mintPubkey = new PublicKey(mint);
+
+      // 1. Try Token 2022 Metadata Extension first
+      try {
+        const { getTokenMetadata } = await import('@solana/spl-token');
+        const tokenMetadata = await getTokenMetadata(
+          this.connection,
+          mintPubkey,
+        );
+        if (tokenMetadata) {
+          return {
+            name: tokenMetadata.name,
+            symbol: tokenMetadata.symbol,
+            uri: tokenMetadata.uri,
+          };
+        }
+      } catch (e) {
+        // Ignore error (e.g. not a Token 2022 mint or no extension)
+      }
+
+      // 2. Try Standard Metaplex PDA
       const [pda] = PublicKey.findProgramAddressSync(
         [
           Buffer.from('metadata'),
@@ -95,8 +115,10 @@ export class MetadataService {
         ],
         this.METADATA_PROGRAM_ID,
       );
+
       const accountInfo = await this.connection.getAccountInfo(pda);
       if (!accountInfo) return null;
+
       // Manual Borsh Deserialization for Metadata
       // First byte is discriminator
       let offset = 1 + 32 + 32; // key + updateAuthority + mint
@@ -106,20 +128,25 @@ export class MetadataService {
         .slice(offset, offset + nameLength)
         .toString('utf-8')
         .trim();
+
       offset += nameLength;
+
       const symbolLength = accountInfo.data.readUInt32LE(offset);
       offset += 4;
       const symbol = accountInfo.data
         .slice(offset, offset + symbolLength)
         .toString('utf-8')
         .trim();
+
       offset += symbolLength;
+
       const uriLength = accountInfo.data.readUInt32LE(offset);
       offset += 4;
       const uri = accountInfo.data
         .slice(offset, offset + uriLength)
         .toString('utf-8')
         .trim();
+
       return { name, symbol, uri };
     } catch (e) {
       console.error(`Error parsing on-chain metadata: ${e.message}`);

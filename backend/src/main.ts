@@ -12,7 +12,9 @@ async function bootstrap() {
   console.warn = (...args) => logger.warn(util.format(...args));
   console.debug = (...args) => logger.debug(util.format(...args));
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn'], // 仅保留错误和警告，过滤掉普通日志以方便排查问题
+  });
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
