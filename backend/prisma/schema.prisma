@@ -23,6 +23,10 @@ model Pool {
   baseDecimals  Int
   quoteDecimals Int
 
+  name          String?  // 代币名称
+  symbol        String?  // 代币符号
+  image         String?  // 代币图片URL
+
   trades        Trade[]
 }
 

@@ -10,6 +10,7 @@ import { DatabaseService } from './database/database.service';
 import { TokenService } from './token/token.service';
 
 import { TokenController } from './token/token.controller';
+import { MetadataService } from './token/metadata.service';
 
 @Module({
   imports: [ConfigModule.forRoot()],
@@ -22,6 +23,7 @@ import { TokenController } from './token/token.controller';
     RedisService,
     DatabaseService,
     TokenService,
+    MetadataService,
   ],
 })
 export class AppModule {}

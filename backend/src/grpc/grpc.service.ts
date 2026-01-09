@@ -8,6 +8,7 @@ import { PumpSwapParser } from '../dex-parsers/pumpSwap';
 import { PumpFunParser } from '../dex-parsers/pumpFun';
 import { RedisService } from 'src/redis/redis.service';
 import { DatabaseService } from 'src/database/database.service';
+import { MetadataService } from 'src/token/metadata.service';
 
 enum ConnectionState {
   DISCONNECTED,
@@ -35,6 +36,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     private pumpFunParser: PumpFunParser,
     private redisService: RedisService,
     private databaseService: DatabaseService,
+    private metadataService: MetadataService,
   ) {}
 
   async onModuleInit() {
@@ -243,14 +245,6 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         this.redisService.setPoolDecimals(migrateEvent.pool, 6);
       }
 
-      // console.log(`\n🎓 [PUMP GRADUATION] PUMP毕业迁移!`);
-      // console.log(`Slot: ${migrateEvent.slot}`);
-      // console.log(`Tx: https://solscan.io/tx/${migrateEvent.signature}`);
-      // console.log(`Token Mint: ${migrateEvent.mint}`);
-      // console.log(`Pool: ${migrateEvent.pool}`);
-      // console.log(`Sol Amount: ${migrateEvent.solAmount}`);
-      // console.log(`Mint Amount: ${migrateEvent.tokenAmount}`);
-      // console.log(`Timestamp: ${migrateEvent.timestamp}`);
       console.log(
         [
           `🎓 [MIGRATE]`,
@@ -271,6 +265,15 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         baseDecimals: 6,
         quoteDecimals: 9,
       });
+
+      // Fetch metadata asynchronously
+      this.metadataService
+        .fetchAndSaveMetadata(migrateEvent.pool, migrateEvent.mint)
+        .catch((e) =>
+          console.error(
+            `Failed to fetch metadata for ${migrateEvent.mint}: ${e.message}`,
+          ),
+        );
       return;
     }
 
@@ -283,44 +286,32 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         //   this.redisService.addTrackedPool(event.pool);
         //   this.redisService.setPoolDecimals(event.pool, event.baseDecimals);
         // }
-
-        // console.log(`\n🎉 [PUMP CREATE] 新池子诞生!`);
-        // console.log(`Slot: ${event.slot}`);
-        // console.log(`Tx: https://solscan.io/tx/${event.signature}`);
-        // console.log(`Pool: ${event.pool}`);
-        // console.log(`User: ${event.creator}`);
-        // console.log(`Token: ${event.baseMint}`);
-        // console.log(`Init Liquidity: ${event.quoteAmount}`);
-        // console.log(`Timestamp: ${event.timestamp}`);
-        // console.log(`BaseDecimals: ${event.baseDecimals}`);
-        // console.log(`QuoteDecimals: ${event.quoteDecimals}`);
-        console.log(
-          [
-            `🎉 [CREATE]`,
-            `  - Tx       : https://solscan.io/tx/${event.signature}`,
-            `  - Slot     : ${event.slot}`,
-            `  - User     : ${event.creator}`,
-            `  - Mint     : ${event.baseMint}`,
-            `  - Pool     : ${event.pool}`,
-            `  - Liquidity: ${event.quoteAmount}`,
-            `  - Base/Qt  : ${event.baseDecimals} / ${event.quoteDecimals}`,
-            `  - Time     : ${new Date(event.timestamp).toISOString()}`,
-          ].join('\n'),
-        );
+        // console.log(
+        //   [
+        //     `🎉 [CREATE]`,
+        //     `  - Tx       : https://solscan.io/tx/${event.signature}`,
+        //     `  - Slot     : ${event.slot}`,
+        //     `  - User     : ${event.creator}`,
+        //     `  - Mint     : ${event.baseMint}`,
+        //     `  - Pool     : ${event.pool}`,
+        //     `  - Liquidity: ${event.quoteAmount}`,
+        //     `  - Base/Qt  : ${event.baseDecimals} / ${event.quoteDecimals}`,
+        //     `  - Time     : ${new Date(event.timestamp).toISOString()}`,
+        //   ].join('\n'),
+        // );
+        // // Fetch metadata asynchronously
+        // this.metadataService
+        //   .fetchAndSaveMetadata(event.pool, event.baseMint)
+        //   .catch((e) =>
+        //     console.error(
+        //       `Failed to fetch metadata for ${event.baseMint}: ${e.message}`,
+        //     ),
+        //   );
       }
       if (
         (event.type === 'BUY' || event.type === 'SELL') &&
         this.trackedPools.has(event.pool)
       ) {
-        // console.log(`\n🟢 [PUMP BUY] 发生买入交易!`);
-        // console.log(`Slot: ${event.slot}`);
-        // console.log(`Tx: https://solscan.io/tx/${event.signature}`);
-        // console.log(`Pool: ${event.pool}`);
-        // console.log(`User: ${event.user}`);
-        // console.log(`SOL Amount Spent: ${event.tokenAmount}`);
-        // console.log(`Token Amount Bought: ${event.solAmount}`);
-        // console.log(`Timestamp: ${event.timestamp}`);
-
         const baseDecimals = this.poolDecimals.get(event.pool) ?? 6;
         const quoteDecimals = 9;
         const baseFactor = Math.pow(10, baseDecimals);

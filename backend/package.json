@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:clean":"npx prisma migrate reset --force && docker exec solana-redis redis-cli FLUSHALL"
+    "db:clean": "npx prisma migrate reset --force && docker exec solana-redis redis-cli FLUSHALL"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -28,6 +28,7 @@
     "@prisma/client": "5.22.0",
     "@solana/web3.js": "^1.98.4",
     "@triton-one/yellowstone-grpc": "^4.0.2",
+    "axios": "^1.13.2",
     "bs58": "^6.0.0",
     "ioredis": "^5.8.2",
     "reflect-metadata": "^0.2.2",
