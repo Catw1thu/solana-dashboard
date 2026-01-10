@@ -266,14 +266,8 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         quoteDecimals: 9,
       });
 
-      // Fetch metadata asynchronously
-      this.metadataService
-        .fetchAndSaveMetadata(migrateEvent.pool, migrateEvent.mint)
-        .catch((e) =>
-          console.error(
-            `Failed to fetch metadata for ${migrateEvent.mint}: ${e.message}`,
-          ),
-        );
+      // Use the non-blocking queue for metadata
+      this.metadataService.queueFetch(migrateEvent.pool, migrateEvent.mint);
       return;
     }
 
@@ -299,14 +293,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         //     `  - Time     : ${new Date(event.timestamp).toISOString()}`,
         //   ].join('\n'),
         // );
-        // // Fetch metadata asynchronously
-        // this.metadataService
-        //   .fetchAndSaveMetadata(event.pool, event.baseMint)
-        //   .catch((e) =>
-        //     console.error(
-        //       `Failed to fetch metadata for ${event.baseMint}: ${e.message}`,
-        //     ),
-        //   );
+        // this.metadataService.queueFetch(event.pool, event.baseMint);
       }
       if (
         (event.type === 'BUY' || event.type === 'SELL') &&
