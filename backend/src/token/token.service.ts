@@ -21,7 +21,7 @@ export class TokenService {
     return this.db.pool.findMany({
       take: limit,
       orderBy: {
-        address: 'desc',
+        createdAt: 'desc',
       },
       include: {
         _count: {

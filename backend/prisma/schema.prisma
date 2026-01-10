@@ -27,6 +27,8 @@ model Pool {
   symbol        String?  // 代币符号
   image         String?  // 代币图片URL
 
+  createdAt     DateTime @default(now())
+
   trades        Trade[]
 }
 

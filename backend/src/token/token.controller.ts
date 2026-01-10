@@ -7,8 +7,9 @@ export class TokenController {
 
   // GET /api/token/pools
   @Get('pools')
-  async getPools() {
-    return this.tokenService.getPools();
+  async getPools(@Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.tokenService.getPools(limitNum);
   }
 
   // GET /api/token/candles/:poolAddress
@@ -41,7 +42,11 @@ export class TokenController {
 
   // GET /api/token/trades/:poolAddress
   @Get('trades/:poolAddress')
-  async getTrades(@Param('poolAddress') poolAddress: string) {
-    return this.tokenService.getTrades(poolAddress);
+  async getTrades(
+    @Param('poolAddress') poolAddress: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.tokenService.getTrades(poolAddress, limitNum);
   }
 }
