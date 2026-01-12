@@ -9,6 +9,8 @@ import { PumpFunParser } from '../dex-parsers/pumpFun';
 import { RedisService } from 'src/redis/redis.service';
 import { DatabaseService } from 'src/database/database.service';
 import { MetadataService } from 'src/token/metadata.service';
+import { EventsGateway } from '../events/events.gateway';
+import { BatcherService } from '../events/batcher.service';
 
 enum ConnectionState {
   DISCONNECTED,
@@ -37,6 +39,8 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     private redisService: RedisService,
     private databaseService: DatabaseService,
     private metadataService: MetadataService,
+    private eventsGateway: EventsGateway,
+    private batcherService: BatcherService,
   ) {}
 
   async onModuleInit() {
@@ -268,6 +272,16 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
 
       // Use the non-blocking queue for metadata
       this.metadataService.queueFetch(migrateEvent.pool, migrateEvent.mint);
+
+      // Emit 'pool:new' event
+      this.eventsGateway.emitGlobal('pool:new', {
+        address: migrateEvent.pool,
+        mint: migrateEvent.mint,
+        solAmount: migrateEvent.solAmount,
+        tokenAmount: migrateEvent.tokenAmount,
+        timestamp: migrateEvent.timestamp,
+      });
+
       return;
     }
 
@@ -333,6 +347,17 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
           price,
           baseAmount,
           quoteAmount,
+        });
+
+        // Add to batcher
+        this.batcherService.addTrade(event.pool, {
+          txHash: event.signature,
+          type: event.type,
+          price,
+          amount: baseAmount,
+          volume: quoteAmount,
+          time: new Date(event.timestamp).getTime(),
+          maker: event.user,
         });
       }
     }

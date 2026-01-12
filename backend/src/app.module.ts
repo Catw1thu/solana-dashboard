@@ -11,9 +11,10 @@ import { TokenService } from './token/token.service';
 
 import { TokenController } from './token/token.controller';
 import { MetadataService } from './token/metadata.service';
+import { EventsModule } from './events/events.module';
 
 @Module({
-  imports: [ConfigModule.forRoot()],
+  imports: [ConfigModule.forRoot(), EventsModule],
   controllers: [AppController, TokenController],
   providers: [
     AppService,
