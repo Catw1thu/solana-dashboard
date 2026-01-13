@@ -39,7 +39,7 @@ export class BatcherService implements OnModuleInit, OnModuleDestroy {
     if (!this.tradeBuffer.has(poolAddress)) {
       this.tradeBuffer.set(poolAddress, []);
     }
-    this.tradeBuffer[poolAddress].push(trade);
+    this.tradeBuffer.get(poolAddress)?.push(trade);
   }
 
   private startBatcher() {
