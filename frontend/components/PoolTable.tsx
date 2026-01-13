@@ -6,9 +6,12 @@ import { useSocketSubscription } from "../hooks/useSocketSubscription";
 import { PoolData } from "../types";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play } from "lucide-react";
+import clsx from "clsx";
+import { useRouter } from "next/navigation";
 
 export const PoolTable = () => {
   const { socket } = useSocket();
+  const router = useRouter();
   const [pools, setPools] = useState<PoolData[]>([]);
 
   // 1. Subscribe to Global Room
@@ -38,7 +41,6 @@ export const PoolTable = () => {
           "http://localhost:3000/api/token/pools?limit=20"
         );
         const data = await res.json();
-        console.log(data);
 
         // Map API response to PoolData interface
         // Note: Historical API data might lack initial liquidity amounts (solAmount/tokenAmount)
@@ -92,7 +94,8 @@ export const PoolTable = () => {
                   animate={{ opacity: 1, x: 0, backgroundColor: "transparent" }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.3 }}
-                  className="group hover:bg-white/5"
+                  onClick={() => router.push(`/pair/${pool.address}`)}
+                  className="group hover:bg-white/5 cursor-pointer"
                 >
                   <td className="px-6 py-4 font-mono text-blue-400">
                     {pool.address.slice(0, 6)}...{pool.address.slice(-4)}
