@@ -13,6 +13,7 @@ export default function TokenDetailPage() {
   const params = useParams();
   const address = params?.address as string;
 
+  const [resolution, setResolution] = useState("1m"); // Default resolution
   const [candles, setCandles] = useState<CandleData[]>([]);
   const { trades } = useTradeFeed(address);
 
@@ -22,7 +23,7 @@ export default function TokenDetailPage() {
     const fetchHistory = async () => {
       try {
         const res = await fetch(
-          `http://localhost:3000/api/token/candles/${address}?resolution=1m&from=0`
+          `http://localhost:3000/api/token/candles/${address}?resolution=${resolution}&from=0`
         );
         const data = await res.json();
         const formatted: CandleData[] = data.map((c: any) => ({
@@ -39,7 +40,7 @@ export default function TokenDetailPage() {
       }
     };
     fetchHistory();
-  }, [address]);
+  }, [address, resolution]);
 
   // 2. Real-time Candle Updates (Simple aggregation)
   // When new trades come in, we need to update the LAST candle or create a new one.
@@ -78,7 +79,13 @@ export default function TokenDetailPage() {
       <main className="container mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Col: Chart */}
         <div className="lg:col-span-2 flex flex-col gap-6">
-          <TradingChart data={candles} />
+          <TradingChart
+            data={candles}
+            initialTimeframe={
+              resolution as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
+            }
+            onTimeframeChange={(tf) => setResolution(tf)}
+          />
         </div>
 
         {/* Right Col: Trade History */}

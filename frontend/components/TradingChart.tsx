@@ -7,8 +7,13 @@ import {
   ISeriesApi,
   Time,
   CandlestickSeries,
+  HistogramSeries,
+  LineSeries,
+  MouseEventParams,
+  SeriesMarker,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import clsx from "clsx";
 
 export interface CandleData {
   time: number; // Unix timestamp
@@ -19,8 +24,12 @@ export interface CandleData {
   volume: number;
 }
 
+export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
 interface TradingChartProps {
   data: CandleData[];
+  initialTimeframe?: Timeframe;
+  onTimeframeChange?: (tf: Timeframe) => void;
   colors?: {
     backgroundColor?: string;
     lineColor?: string;
@@ -30,8 +39,23 @@ interface TradingChartProps {
   };
 }
 
+// Legend Data Structure
+interface LegendData {
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  percentChange: string;
+  color: string;
+}
+
+const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
 export const TradingChart = ({
   data,
+  initialTimeframe = "1m",
+  onTimeframeChange,
   colors = {
     backgroundColor: "transparent",
     lineColor: "#2962FF",
@@ -43,23 +67,36 @@ export const TradingChart = ({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+
+  const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
+  const [legend, setLegend] = useState<LegendData | null>(null);
+
+  // Indicator Visibility State
+  const [showVolume, setShowVolume] = useState(true);
+
+  // Memoize sorted data
+  const sortedData = useMemo(() => {
+    return [...data].sort((a, b) => a.time - b.time);
+  }, [data]);
+
+  // Handle Timeframe Click
+  const handleTimeframeClick = (tf: Timeframe) => {
+    setTimeframe(tf);
+    if (onTimeframeChange) onTimeframeChange(tf);
+  };
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    const handleResize = () => {
-      chartRef.current?.applyOptions({
-        width: chartContainerRef.current!.clientWidth,
-      });
-    };
-
+    // --- Chart Initialization ---
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.backgroundColor },
         textColor: colors.textColor,
       },
       width: chartContainerRef.current.clientWidth,
-      height: 400,
+      height: 500,
       grid: {
         vertLines: { color: "rgba(255, 255, 255, 0.05)" },
         horzLines: { color: "rgba(255, 255, 255, 0.05)" },
@@ -71,10 +108,16 @@ export const TradingChart = ({
       rightPriceScale: {
         borderColor: "rgba(255, 255, 255, 0.1)",
       },
+      crosshair: {
+        mode: 1, // CrosshairMode.Normal
+      },
     });
 
     chartRef.current = chart;
 
+    // --- Series ---
+
+    // 1. Candlestick
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
@@ -82,19 +125,70 @@ export const TradingChart = ({
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
     });
-
     candlestickSeriesRef.current = candlestickSeries;
 
-    // Sort data by time before setting
-    const sortedData = [...data]
-      .sort((a, b) => a.time - b.time)
-      .map((item) => ({
-        ...item,
-        time: (item.time / 1000) as Time, // Lightweight charts expects seconds for unix timestamps
-      }));
+    // 2. Volume (Histogram)
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "", // Overlay on main chart, but we need to position it
+    });
+    // Configure volume to sit at bottom
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.8, // 80% empty space at top
+        bottom: 0,
+      },
+    });
+    volumeSeriesRef.current = volumeSeries;
 
-    candlestickSeries.setData(sortedData);
+    // --- Initial Data Population ---
+    updateChartData();
 
+    // --- Crosshair / Legend Logic ---
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !sortedData.length) {
+        setLegend(null);
+        return;
+      }
+
+      // Find data point
+      // Note: param.seriesData returns a Map of series -> value/OHLC
+      // But for custom robust logic, we can also lookup by time if we have a map,
+      // or just use what lightweight charts gives us.
+
+      const candle = param.seriesData.get(candlestickSeries) as any;
+      const volume = param.seriesData.get(volumeSeries) as any;
+
+      if (candle) {
+        const open = candle.open;
+        const close = candle.close;
+        const high = candle.high;
+        const low = candle.low;
+
+        // Calculate color and percent
+        const isUp = close >= open;
+        const color = isUp ? "text-green-500" : "text-red-500";
+        const percent = ((close - open) / open) * 100;
+        const sign = percent >= 0 ? "+" : "";
+
+        setLegend({
+          open: open.toFixed(6),
+          high: high.toFixed(6),
+          low: low.toFixed(6),
+          close: close.toFixed(6),
+          volume: volume?.value ? (volume.value / 1e9).toFixed(2) + "B" : "N/A", // Assume scaled
+          // Actually raw volume might be different.
+          // Let's use raw value formatting
+          percentChange: `${sign}${percent.toFixed(2)}%`,
+          color,
+        });
+      }
+    });
+
+    // Resize handler
+    const handleResize = () => {
+      chart.applyOptions({ width: chartContainerRef.current!.clientWidth });
+    };
     window.addEventListener("resize", handleResize);
 
     return () => {
@@ -103,31 +197,99 @@ export const TradingChart = ({
     };
   }, []);
 
-  // Update data when props change
-  useEffect(() => {
-    if (candlestickSeriesRef.current && data.length > 0) {
-      const sortedData = [...data]
-        .sort((a, b) => a.time - b.time)
-        .map((item) => ({
-          ...item,
-          time: (item.time / 1000) as Time,
+  // Use another effect to update data when 'data', 'showVolume' changes
+  // This separates initialization from updates
+  const updateChartData = () => {
+    if (!candlestickSeriesRef.current) return;
+
+    const chartPoints = sortedData.map((d) => ({
+      ...d,
+      time: (d.time / 1000) as Time,
+    }));
+
+    candlestickSeriesRef.current.setData(chartPoints);
+
+    // Volume
+    if (volumeSeriesRef.current) {
+      if (showVolume) {
+        const volumePoints = sortedData.map((d) => ({
+          time: (d.time / 1000) as Time,
+          value: d.volume,
+          color:
+            d.close >= d.open
+              ? "rgba(34, 197, 94, 0.3)"
+              : "rgba(239, 68, 68, 0.3)",
         }));
-      candlestickSeriesRef.current.setData(sortedData);
+        volumeSeriesRef.current.setData(volumePoints);
+        volumeSeriesRef.current.applyOptions({ visible: true });
+      } else {
+        volumeSeriesRef.current.applyOptions({ visible: false });
+      }
     }
-  }, [data]);
+  };
+
+  useEffect(() => {
+    updateChartData();
+  }, [sortedData, showVolume]);
 
   return (
-    <div className="relative w-full rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Price Chart</h3>
+    <div className="relative w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-md flex flex-col">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between p-3 border-b border-white/5">
+        <div className="flex gap-1">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf}
+              onClick={() => handleTimeframeClick(tf)}
+              className={clsx(
+                "px-2 py-1 text-xs rounded hover:bg-white/10 transition-colors",
+                timeframe === tf
+                  ? "text-blue-400 bg-blue-500/10 font-semibold"
+                  : "text-gray-400"
+              )}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+
         <div className="flex gap-2">
-          {/* Resolution selector could go here */}
-          <span className="rounded bg-white/10 px-2 py-1 text-xs text-gray-400">
-            1m
-          </span>
+          <button
+            onClick={() => setShowVolume(!showVolume)}
+            className={clsx(
+              "px-2 py-1 text-xs rounded border transition-colors",
+              showVolume
+                ? "border-green-500/50 text-green-400"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            )}
+          >
+            Vol
+          </button>
         </div>
       </div>
-      <div ref={chartContainerRef} className="w-full" />
+
+      {/* Legend */}
+      <div className="absolute top-[50px] left-4 z-10 pointer-events-none text-xs font-mono space-y-1">
+        {legend ? (
+          <>
+            <div className="flex gap-3">
+              <span className={legend.color}>O: {legend.open}</span>
+              <span className={legend.color}>H: {legend.high}</span>
+              <span className={legend.color}>L: {legend.low}</span>
+              <span className={legend.color}>C: {legend.close}</span>
+              <span className={legend.color}>({legend.percentChange})</span>
+            </div>
+            {showVolume && (
+              <div className="text-gray-400">Vol: {legend.volume}</div>
+            )}
+          </>
+        ) : (
+          // Default to showing latest data if available, or just empty
+          <span className="text-gray-500">...</span>
+        )}
+      </div>
+
+      <div ref={chartContainerRef} className="w-full h-[500px]" />
     </div>
   );
 };
