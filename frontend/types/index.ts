@@ -2,8 +2,8 @@ export interface Trade {
   txHash: string;
   type: "BUY" | "SELL";
   price: number;
-  amount: number;
-  volume: number;
+  baseAmount: number;
+  quoteAmount: number;
   time: number;
   maker: string;
 }

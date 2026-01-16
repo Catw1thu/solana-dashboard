@@ -351,11 +351,11 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
 
         // Add to batcher
         this.batcherService.addTrade(event.pool, {
-          txHash: event.signature,
+          txHash: `https://solscan.io/tx/${event.signature}`,
           type: event.type,
           price,
-          amount: baseAmount,
-          volume: quoteAmount,
+          baseAmount,
+          quoteAmount,
           time: new Date(event.timestamp).getTime(),
           maker: event.user,
         });

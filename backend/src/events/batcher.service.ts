@@ -6,8 +6,8 @@ export interface TradeDisplay {
   txHash: string;
   type: 'BUY' | 'SELL';
   price: number;
-  amount: number; // Base amount
-  volume: number; // Quote amount (USD/SOL volume)
+  baseAmount: number; // Base amount
+  quoteAmount: number; // Quote amount (USD/SOL volume)
   time: number; // Timestamp
   maker: string;
 }
