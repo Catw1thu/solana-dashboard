@@ -233,7 +233,7 @@ export const TradingChart = ({
   }, [sortedData, showVolume]);
 
   return (
-    <div className="relative w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-md flex flex-col">
+    <div className="relative w-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center justify-between p-3 border-b border-white/5">
         <div className="flex gap-1">

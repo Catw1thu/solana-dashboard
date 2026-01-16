@@ -9,6 +9,9 @@ import { useSocketSubscription } from "@/hooks/useSocketSubscription"; // Ensure
 // Note: useTradeFeed already calls useSocketSubscription, so we don't need to call it twice if we use the feed.
 // However, useTradeFeed returns "trades". We need to aggregate trades into candles for the chart.
 
+import { ExternalLink } from "lucide-react";
+import { formatAddress, formatPrice, formatAmount } from "@/utils/format";
+
 export default function TokenDetailPage() {
   const params = useParams();
   const address = params?.address as string;
@@ -68,70 +71,95 @@ export default function TokenDetailPage() {
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-green-500/30">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-xl">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <h1 className="text-xl font-bold tracking-tight">
-            Token: {address.slice(0, 8)}...
-          </h1>
-        </div>
-      </header>
+      <main className="grid grid-cols-1 lg:grid-cols-4 divide-x divide-white/10 min-h-screen">
+        {/* Left Col: Chart & Live Trades */}
+        <div className="lg:col-span-3 flex flex-col">
+          <div className="h-[500px] border-b border-white/10">
+            <TradingChart
+              data={candles}
+              initialTimeframe={
+                resolution as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
+              }
+              onTimeframeChange={(tf) => setResolution(tf)}
+            />
+          </div>
 
-      <main className="container mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Col: Chart */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <TradingChart
-            data={candles}
-            initialTimeframe={
-              resolution as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
-            }
-            onTimeframeChange={(tf) => setResolution(tf)}
-          />
-        </div>
-
-        {/* Right Col: Trade History */}
-        <div className="lg:col-span-1">
-          <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-md">
-            <div className="p-4 border-b border-white/10">
-              <h3 className="font-semibold text-white">Live Trades</h3>
+          <div className="h-screen overflow-y-auto flex flex-col">
+            <div className="p-3 border-b border-white/10 bg-black sticky top-0 z-20">
+              <h3 className="font-semibold text-white text-sm">Live Trades</h3>
             </div>
-            <div className="max-h-[600px] overflow-y-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="text-gray-500 sticky top-0 bg-black/90">
-                  <tr>
-                    <th className="p-3">Time</th>
-                    <th className="p-3">Type</th>
-                    <th className="p-3 text-right">Price</th>
-                    <th className="p-3 text-right">SOL</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 text-gray-300">
-                  {trades.map((t) => (
-                    <tr
-                      key={t.txHash}
-                      className="hover:bg-white/5 transition-colors"
+            <table className="w-full text-xs text-left">
+              <thead className="text-gray-500 sticky top-[45px] bg-black z-10 border-b border-white/5">
+                <tr>
+                  <th className="p-3">Time</th>
+                  <th className="p-3">Type</th>
+                  <th className="p-3 text-right">Price</th>
+                  <th className="p-3 text-right">Amount</th>
+                  <th className="p-3 text-right">SOL</th>
+                  <th className="p-3 text-right">Maker</th>
+                  <th className="p-3 text-right">Tx</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-gray-300">
+                {trades.map((t) => (
+                  <tr
+                    key={t.txHash}
+                    className="hover:bg-white/5 transition-colors"
+                  >
+                    <td className="p-3 text-gray-500">
+                      {new Date(t.time).toLocaleTimeString()}
+                    </td>
+                    <td
+                      className={
+                        t.type === "BUY"
+                          ? "text-green-500 p-3"
+                          : "text-red-500 p-3"
+                      }
                     >
-                      <td className="p-3 text-gray-500">
-                        {new Date(t.time).toLocaleTimeString()}
-                      </td>
-                      <td
-                        className={
-                          t.type === "BUY"
-                            ? "text-green-500 p-3"
-                            : "text-red-500 p-3"
-                        }
+                      {t.type}
+                    </td>
+                    <td className="p-3 text-right font-mono text-blue-300">
+                      ${formatPrice(t.price)}
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      {formatAmount(t.baseAmount)}
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      {t.quoteAmount.toFixed(3)}
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      {formatAddress(t.maker)}
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      <a
+                        href={t.txHash}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center hover:text-blue-400 transition-colors"
                       >
-                        {t.type}
-                      </td>
-                      <td className="p-3 text-right font-mono text-blue-300">
-                        ${t.price.toFixed(6)}
-                      </td>
-                      <td className="p-3 text-right font-mono">
-                        {(t.volume / 1e9).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <ExternalLink size={14} />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right Col: Token Info (Placeholder) */}
+        <div className="lg:col-span-1 h-full">
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Token Info
+            </h3>
+            <div className="space-y-4">
+              <div className="h-20 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-500 text-sm">
+                Pool Data coming soon...
+              </div>
+              <div className="h-20 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-500 text-sm">
+                Market Cap coming soon...
+              </div>
             </div>
           </div>
         </div>
