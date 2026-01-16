@@ -14,6 +14,7 @@ import {
 } from "lightweight-charts";
 import { useEffect, useRef, useState, useMemo } from "react";
 import clsx from "clsx";
+import { formatPrice } from "@/utils/format";
 
 export interface CandleData {
   time: number; // Unix timestamp
@@ -47,6 +48,7 @@ interface LegendData {
   close: string;
   volume: string;
   percentChange: string;
+  priceChange: string;
   color: string;
 }
 
@@ -80,6 +82,12 @@ export const TradingChart = ({
     return [...data].sort((a, b) => a.time - b.time);
   }, [data]);
 
+  // Ref for data access in closures
+  const dataRef = useRef<CandleData[]>(sortedData);
+  useEffect(() => {
+    dataRef.current = sortedData;
+  }, [sortedData]);
+
   // Handle Timeframe Click
   const handleTimeframeClick = (tf: Timeframe) => {
     setTimeframe(tf);
@@ -89,7 +97,6 @@ export const TradingChart = ({
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // --- Chart Initialization ---
     // --- Chart Initialization ---
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -125,6 +132,11 @@ export const TradingChart = ({
       borderVisible: false,
       wickUpColor: "#00cf9d",
       wickDownColor: "#ff4d4d",
+      priceFormat: {
+        type: "custom",
+        formatter: formatPrice,
+        minMove: 0.000000000000001,
+      },
     });
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -147,42 +159,25 @@ export const TradingChart = ({
 
     // --- Crosshair / Legend Logic ---
     chart.subscribeCrosshairMove((param) => {
-      if (!param.time || !sortedData.length) {
-        setLegend(null);
+      const currentData = dataRef.current;
+
+      if (!param.time || !currentData.length) {
+        // Revert to latest data
+        if (currentData.length > 0) {
+          const lastCandle = currentData[currentData.length - 1];
+          const lastVolume = { value: lastCandle.volume };
+          updateLegend(lastCandle, lastVolume);
+        } else {
+          setLegend(null);
+        }
         return;
       }
-
-      // Find data point
-      // Note: param.seriesData returns a Map of series -> value/OHLC
-      // But for custom robust logic, we can also lookup by time if we have a map,
-      // or just use what lightweight charts gives us.
 
       const candle = param.seriesData.get(candlestickSeries) as any;
       const volume = param.seriesData.get(volumeSeries) as any;
 
       if (candle) {
-        const open = candle.open;
-        const close = candle.close;
-        const high = candle.high;
-        const low = candle.low;
-
-        // Calculate color and percent
-        const isUp = close >= open;
-        const color = isUp ? "text-[#00cf9d]" : "text-[#ff4d4d]";
-        const percent = ((close - open) / open) * 100;
-        const sign = percent >= 0 ? "+" : "";
-
-        setLegend({
-          open: open.toFixed(6),
-          high: high.toFixed(6),
-          low: low.toFixed(6),
-          close: close.toFixed(6),
-          volume: volume?.value ? (volume.value / 1e9).toFixed(2) + "B" : "N/A", // Assume scaled
-          // Actually raw volume might be different.
-          // Let's use raw value formatting
-          percentChange: `${sign}${percent.toFixed(2)}%`,
-          color,
-        });
+        updateLegend(candle, volume);
       }
     });
 
@@ -232,6 +227,43 @@ export const TradingChart = ({
         volumeSeriesRef.current.applyOptions({ visible: false });
       }
     }
+
+    // Also update legend if no crosshair event is active (approximate check by just updating latest)
+    // Actually, since we don't have easy access to chart state "isHovered",
+    // we can just update the legend to latest here. If user hovers, it will overwrite.
+    if (sortedData.length > 0) {
+      const last = sortedData[sortedData.length - 1];
+      updateLegend(last, last.volume);
+    }
+  };
+
+  // Helper to update legend
+  const updateLegend = (candle: any, volume: any) => {
+    if (!candle) {
+      setLegend(null);
+      return;
+    }
+    const open = candle.open;
+    const close = candle.close;
+    const high = candle.high;
+    const low = candle.low;
+
+    // Calculate color and percent
+    const isUp = close >= open;
+    const color = isUp ? "text-[#00cf9d]" : "text-[#ff4d4d]";
+    const percent = ((close - open) / open) * 100;
+    const sign = percent >= 0 ? "+" : "";
+
+    setLegend({
+      open: formatPrice(open),
+      high: formatPrice(high),
+      low: formatPrice(low),
+      close: formatPrice(close),
+      volume: volume?.value ? (volume.value / 1e9).toFixed(2) + "B" : "N/A",
+      percentChange: `${sign}${percent.toFixed(2)}%`,
+      priceChange: `${sign}${formatPrice(close - open)}`,
+      color,
+    });
   };
 
   useEffect(() => {
@@ -283,6 +315,7 @@ export const TradingChart = ({
               <span className={legend.color}>H: {legend.high}</span>
               <span className={legend.color}>L: {legend.low}</span>
               <span className={legend.color}>C: {legend.close}</span>
+              <span className={legend.color}>{legend.priceChange}</span>
               <span className={legend.color}>({legend.percentChange})</span>
             </div>
             {showVolume && (
