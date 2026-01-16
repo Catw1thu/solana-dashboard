@@ -70,11 +70,11 @@ export default function TokenDetailPage() {
   }, [trades]);
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans selection:bg-green-500/30">
-      <main className="grid grid-cols-1 lg:grid-cols-4 divide-x divide-white/10 min-h-screen">
+    <div className="min-h-screen bg-[#0b0e11] text-white font-sans selection:bg-[#00cf9d]/30">
+      <main className="grid grid-cols-1 lg:grid-cols-4 divide-x divide-[#20242d] min-h-screen">
         {/* Left Col: Chart & Live Trades */}
         <div className="lg:col-span-3 flex flex-col">
-          <div className="h-[500px] border-b border-white/10">
+          <div className="h-[500px] border-b border-[#20242d]">
             <TradingChart
               data={candles}
               initialTimeframe={
@@ -85,11 +85,11 @@ export default function TokenDetailPage() {
           </div>
 
           <div className="h-screen overflow-y-auto flex flex-col">
-            <div className="p-3 border-b border-white/10 bg-black sticky top-0 z-20">
+            <div className="p-3 border-b border-[#20242d] bg-[#0b0e11] sticky top-0 z-20">
               <h3 className="font-semibold text-white text-sm">Live Trades</h3>
             </div>
             <table className="w-full text-xs text-left">
-              <thead className="text-gray-500 sticky top-[45px] bg-black z-10 border-b border-white/5">
+              <thead className="text-[#88909f] sticky top-[45px] bg-[#0b0e11] z-10 border-b border-[#20242d]">
                 <tr>
                   <th className="p-3">Time</th>
                   <th className="p-3">Type</th>
@@ -100,34 +100,38 @@ export default function TokenDetailPage() {
                   <th className="p-3 text-right">Tx</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 text-gray-300">
+              <tbody className="divide-y divide-[#20242d] text-[#88909f]">
                 {trades.map((t) => (
                   <tr
                     key={t.txHash}
-                    className="hover:bg-white/5 transition-colors"
+                    className="hover:bg-[#20242d]/30 transition-colors"
                   >
-                    <td className="p-3 text-gray-500">
+                    <td className="p-3">
                       {new Date(t.time).toLocaleTimeString()}
                     </td>
                     <td
                       className={
                         t.type === "BUY"
-                          ? "text-green-500 p-3"
-                          : "text-red-500 p-3"
+                          ? "text-[#00cf9d] p-3"
+                          : "text-[#ff4d4d] p-3"
                       }
                     >
                       {t.type}
                     </td>
-                    <td className="p-3 text-right font-mono text-blue-300">
+                    <td className="p-3 text-right font-mono">
                       ${formatPrice(t.price)}
                     </td>
                     <td className="p-3 text-right font-mono">
                       {formatAmount(t.baseAmount)}
                     </td>
-                    <td className="p-3 text-right font-mono">
+                    <td
+                      className={`p-3 text-right font-mono ${
+                        t.type === "BUY" ? "text-[#00cf9d]" : "text-[#ff4d4d]"
+                      }`}
+                    >
                       {t.quoteAmount.toFixed(3)}
                     </td>
-                    <td className="p-3 text-right font-mono">
+                    <td className="p-3 text-right font-mono text-[#88909f]/70">
                       {formatAddress(t.maker)}
                     </td>
                     <td className="p-3 text-right font-mono">
@@ -135,7 +139,7 @@ export default function TokenDetailPage() {
                         href={t.txHash}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center hover:text-blue-400 transition-colors"
+                        className="inline-flex items-center hover:text-[#00cf9d] transition-colors"
                       >
                         <ExternalLink size={14} />
                       </a>
@@ -154,10 +158,10 @@ export default function TokenDetailPage() {
               Token Info
             </h3>
             <div className="space-y-4">
-              <div className="h-20 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-500 text-sm">
+              <div className="h-20 rounded-lg bg-[#20242d]/20 border border-[#20242d] flex items-center justify-center text-[#88909f] text-sm">
                 Pool Data coming soon...
               </div>
-              <div className="h-20 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-500 text-sm">
+              <div className="h-20 rounded-lg bg-[#20242d]/20 border border-[#20242d] flex items-center justify-center text-[#88909f] text-sm">
                 Market Cap coming soon...
               </div>
             </div>

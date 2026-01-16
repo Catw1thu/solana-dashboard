@@ -59,7 +59,7 @@ export const TradingChart = ({
   colors = {
     backgroundColor: "transparent",
     lineColor: "#2962FF",
-    textColor: "#A3A3A3",
+    textColor: "#88909f",
     areaTopColor: "#2962FF",
     areaBottomColor: "rgba(41, 98, 255, 0.28)",
   },
@@ -90,16 +90,17 @@ export const TradingChart = ({
     if (!chartContainerRef.current) return;
 
     // --- Chart Initialization ---
+    // --- Chart Initialization ---
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.backgroundColor },
         textColor: colors.textColor,
       },
       width: chartContainerRef.current.clientWidth,
-      height: 500,
+      height: chartContainerRef.current.clientHeight,
       grid: {
-        vertLines: { color: "rgba(255, 255, 255, 0.05)" },
-        horzLines: { color: "rgba(255, 255, 255, 0.05)" },
+        vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+        horzLines: { color: "rgba(255, 255, 255, 0.03)" },
       },
       timeScale: {
         timeVisible: true,
@@ -119,11 +120,11 @@ export const TradingChart = ({
 
     // 1. Candlestick
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: "#00cf9d",
+      downColor: "#ff4d4d",
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#00cf9d",
+      wickDownColor: "#ff4d4d",
     });
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -167,7 +168,7 @@ export const TradingChart = ({
 
         // Calculate color and percent
         const isUp = close >= open;
-        const color = isUp ? "text-green-500" : "text-red-500";
+        const color = isUp ? "text-[#00cf9d]" : "text-[#ff4d4d]";
         const percent = ((close - open) / open) * 100;
         const sign = percent >= 0 ? "+" : "";
 
@@ -187,7 +188,12 @@ export const TradingChart = ({
 
     // Resize handler
     const handleResize = () => {
-      chart.applyOptions({ width: chartContainerRef.current!.clientWidth });
+      if (chartContainerRef.current) {
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+          height: chartContainerRef.current.clientHeight,
+        });
+      }
     };
     window.addEventListener("resize", handleResize);
 
@@ -217,8 +223,8 @@ export const TradingChart = ({
           value: d.volume,
           color:
             d.close >= d.open
-              ? "rgba(34, 197, 94, 0.3)"
-              : "rgba(239, 68, 68, 0.3)",
+              ? "rgba(0, 207, 157, 0.5)"
+              : "rgba(255, 77, 77, 0.5)",
         }));
         volumeSeriesRef.current.setData(volumePoints);
         volumeSeriesRef.current.applyOptions({ visible: true });
@@ -233,7 +239,7 @@ export const TradingChart = ({
   }, [sortedData, showVolume]);
 
   return (
-    <div className="relative w-full flex flex-col">
+    <div className="relative w-full h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center justify-between p-3 border-b border-white/5">
         <div className="flex gap-1">
@@ -242,10 +248,10 @@ export const TradingChart = ({
               key={tf}
               onClick={() => handleTimeframeClick(tf)}
               className={clsx(
-                "px-2 py-1 text-xs rounded hover:bg-white/10 transition-colors",
+                "px-2 py-1 text-xs rounded hover:bg-[#20242d] transition-colors",
                 timeframe === tf
-                  ? "text-blue-400 bg-blue-500/10 font-semibold"
-                  : "text-gray-400"
+                  ? "text-[#00cf9d] bg-[#00cf9d]/10 font-semibold"
+                  : "text-[#88909f]"
               )}
             >
               {tf}
@@ -259,8 +265,8 @@ export const TradingChart = ({
             className={clsx(
               "px-2 py-1 text-xs rounded border transition-colors",
               showVolume
-                ? "border-green-500/50 text-green-400"
-                : "border-transparent text-gray-500 hover:text-gray-300"
+                ? "border-[#00cf9d]/50 text-[#00cf9d]"
+                : "border-transparent text-[#88909f] hover:text-[#ffffff]"
             )}
           >
             Vol
@@ -289,7 +295,7 @@ export const TradingChart = ({
         )}
       </div>
 
-      <div ref={chartContainerRef} className="w-full h-[500px]" />
+      <div ref={chartContainerRef} className="w-full flex-1 min-h-0" />
     </div>
   );
 };
