@@ -23,11 +23,6 @@ export class TokenService {
       orderBy: {
         createdAt: 'desc',
       },
-      include: {
-        _count: {
-          select: { trades: true },
-        },
-      },
     });
   }
 

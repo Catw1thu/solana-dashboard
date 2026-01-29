@@ -30,6 +30,8 @@ model Pool {
   createdAt     DateTime @default(now())
 
   trades        Trade[]
+
+  @@index([createdAt(sort: Desc)])
 }
 
 // 交易记录(时序数据)
