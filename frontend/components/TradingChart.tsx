@@ -3,6 +3,7 @@
 import {
   createChart,
   ColorType,
+  CrosshairMode,
   IChartApi,
   ISeriesApi,
   Time,
@@ -117,7 +118,7 @@ export const TradingChart = ({
         borderColor: "rgba(255, 255, 255, 0.1)",
       },
       crosshair: {
-        mode: 1, // CrosshairMode.Normal
+        mode: CrosshairMode.Normal, // Crosshair follows mouse freely, not snapped to OHLC
       },
     });
 
@@ -283,7 +284,7 @@ export const TradingChart = ({
                 "px-2 py-1 text-xs rounded hover:bg-[#20242d] transition-colors",
                 timeframe === tf
                   ? "text-[#00cf9d] bg-[#00cf9d]/10 font-semibold"
-                  : "text-[#88909f]"
+                  : "text-[#88909f]",
               )}
             >
               {tf}
@@ -298,7 +299,7 @@ export const TradingChart = ({
               "px-2 py-1 text-xs rounded border transition-colors",
               showVolume
                 ? "border-[#00cf9d]/50 text-[#00cf9d]"
-                : "border-transparent text-[#88909f] hover:text-[#ffffff]"
+                : "border-transparent text-[#88909f] hover:text-[#ffffff]",
             )}
           >
             Vol
