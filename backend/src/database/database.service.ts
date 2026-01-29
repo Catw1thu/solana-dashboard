@@ -44,6 +44,7 @@ export class DatabaseService extends PrismaClient implements OnModuleInit {
     price: number;
     baseAmount: number;
     quoteAmount: number;
+    maker: string;
   }) {
     return this.trade.create({
       data: {
@@ -54,6 +55,7 @@ export class DatabaseService extends PrismaClient implements OnModuleInit {
         price: data.price,
         baseAmount: data.baseAmount,
         quoteAmount: data.quoteAmount,
+        maker: data.maker,
       },
     });
   }

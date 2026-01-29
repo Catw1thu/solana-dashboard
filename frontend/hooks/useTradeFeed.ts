@@ -96,12 +96,21 @@ export const useTradeFeed = (poolAddress: string) => {
 
     const fetchHistory = async () => {
       try {
-        // Fetch historical candles
-        const res = await fetch(
-          `http://localhost:3000/api/token/candles/${poolAddress}?resolution=${resolution}&from=0`,
-        );
-        const data = await res.json();
-        const formatted: CandleData[] = data.map((c: any) => ({
+        // Fetch historical candles and trades in parallel
+        const [candlesRes, tradesRes] = await Promise.all([
+          fetch(
+            `http://localhost:3000/api/token/candles/${poolAddress}?resolution=${resolution}&from=0`,
+          ),
+          fetch(
+            `http://localhost:3000/api/token/trades/${poolAddress}?limit=100`,
+          ),
+        ]);
+
+        const candlesData = await candlesRes.json();
+        const tradesData = await tradesRes.json();
+
+        // Format candles
+        const formattedCandles: CandleData[] = candlesData.map((c: any) => ({
           time: new Date(c.time).getTime(),
           open: c.open,
           high: c.high,
@@ -109,12 +118,17 @@ export const useTradeFeed = (poolAddress: string) => {
           close: c.close,
           volume: c.volume,
         }));
+        formattedCandles.sort((a, b) => a.time - b.time);
 
-        // Sort by time ascending
-        formatted.sort((a, b) => a.time - b.time);
+        // Format trades (already sorted by time desc from backend)
+        const formattedTrades: Trade[] = tradesData.map((t: any) => ({
+          ...t,
+          time: new Date(t.time).getTime(),
+        }));
 
-        candlesRef.current = formatted;
-        setCandles(formatted);
+        candlesRef.current = formattedCandles;
+        setCandles(formattedCandles);
+        setTrades(formattedTrades);
         setIsHistoryLoaded(true);
       } catch (e) {
         console.error("Failed to fetch history", e);
@@ -122,8 +136,6 @@ export const useTradeFeed = (poolAddress: string) => {
       }
     };
 
-    // Also reset trades when address changes
-    setTrades([]);
     fetchHistory();
   }, [poolAddress, resolution]);
 

@@ -349,6 +349,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
           price,
           baseAmount,
           quoteAmount,
+          maker: event.user,
         });
 
         // Add to batcher

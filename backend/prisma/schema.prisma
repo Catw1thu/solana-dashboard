@@ -52,6 +52,8 @@ model Trade {
   baseAmount Float
   quoteAmount Float
 
+  maker String?    // 交易发起者地址 (可空，历史数据可能没有)
+
   // 复合主键：保证唯一性，同时满足时序数据库要求
   @@id([time, txHash])
 

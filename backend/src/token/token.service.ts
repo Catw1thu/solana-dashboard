@@ -87,6 +87,7 @@ export class TokenService {
         baseAmount: true,
         quoteAmount: true,
         txHash: true,
+        maker: true,
       },
     });
   }
