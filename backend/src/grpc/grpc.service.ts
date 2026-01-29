@@ -80,8 +80,10 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
     const grpc_endpoint =
       this.configService.get<string>('GRPC_ENDPOINT') ??
       'solana-yellowstone-grpc.publicnode.com:443';
+    const grpc_token =
+      this.configService.get<string>('GRPC_TOKEN') ?? undefined;
     console.log(`Connecting to gRPC endpoint: ${grpc_endpoint} ...`);
-    this.client = new Client(grpc_endpoint, undefined, {
+    this.client = new Client(grpc_endpoint, grpc_token, {
       'grpc.max_receive_message_length': 16 * 1024 * 1024,
     });
 
