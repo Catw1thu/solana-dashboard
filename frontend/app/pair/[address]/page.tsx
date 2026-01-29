@@ -1,13 +1,8 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
-import { useSocket } from "@/context/SocketContext";
 import { useTradeFeed } from "@/hooks/useTradeFeed";
-import { TradingChart, CandleData } from "@/components/TradingChart";
-import { useSocketSubscription } from "@/hooks/useSocketSubscription"; // Ensure this hooks is used or useTradeFeed has it.
-// Note: useTradeFeed already calls useSocketSubscription, so we don't need to call it twice if we use the feed.
-// However, useTradeFeed returns "trades". We need to aggregate trades into candles for the chart.
+import { TradingChart } from "@/components/TradingChart";
 
 import { ExternalLink } from "lucide-react";
 import { formatAddress, formatPrice, formatAmount } from "@/utils/format";
@@ -16,58 +11,8 @@ export default function TokenDetailPage() {
   const params = useParams();
   const address = params?.address as string;
 
-  const [resolution, setResolution] = useState("1m"); // Default resolution
-  const [candles, setCandles] = useState<CandleData[]>([]);
-  const { trades } = useTradeFeed(address);
-
-  // 1. Fetch Historical Data
-  useEffect(() => {
-    if (!address) return;
-    const fetchHistory = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:3000/api/token/candles/${address}?resolution=${resolution}&from=0`
-        );
-        const data = await res.json();
-        const formatted: CandleData[] = data.map((c: any) => ({
-          time: new Date(c.time).getTime(),
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        }));
-        setCandles(formatted);
-      } catch (e) {
-        console.error("Failed to fetch history", e);
-      }
-    };
-    fetchHistory();
-  }, [address, resolution]);
-
-  // 2. Real-time Candle Updates (Simple aggregation)
-  // When new trades come in, we need to update the LAST candle or create a new one.
-  // This logic is complex to get right in frontend only, but here is a simple MVP approach:
-  // We can just re-fetch the latest candle periodically OR simplistic merge.
-  // For MVP interactive feel, let's just listen to trades and update the last candle close.
-
-  useEffect(() => {
-    if (trades.length === 0 || candles.length === 0) return;
-
-    const lastTrade = trades[0]; // Newest trade
-    const lastCandle = candles[candles.length - 1]; // Current candle
-
-    // Check if trade belongs to current candle (1m window)
-    // Simple logic: if trade time > last candle time + 60s, make new candle.
-    // However, candles are time-bucketed.
-    // Let's rely on re-fetching for accuracy or complex logic.
-    // For now, let's just log it. Real-time chart updates are tricky without decent state management.
-
-    // Simplest approach: Just update the "Close" of the last candle to generate movement.
-    // Verification: Does Lightweight charts support live updates? Yes via series.update().
-    // But we are passing `data` prop.
-    // Let's implement a refetch for now to keep it synced every 5 seconds.
-  }, [trades]);
+  // Unified data source for trades and candles
+  const { trades, candles, resolution, setResolution } = useTradeFeed(address);
 
   return (
     <div className="min-h-screen bg-[#0b0e11] text-white font-sans selection:bg-[#00cf9d]/30">
