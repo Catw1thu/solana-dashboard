@@ -25,9 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${inter.variable} ${manrope.variable} antialiased bg-black text-white`}
-      >
+      <body className={`${inter.variable} ${manrope.variable} antialiased`}>
         <SocketProvider>{children}</SocketProvider>
       </body>
     </html>

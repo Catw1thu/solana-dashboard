@@ -1,34 +1,149 @@
 @import "tailwindcss";
 
+/* ============================================
+   SOLANA DASHBOARD DESIGN SYSTEM
+   Inspired by GMGN.ai & DexScreener
+   ============================================ */
+
+/* CSS Variables - 统一配色 */
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  /* Background Colors - 从深到浅 */
+  --bg-primary: #0b0e11; /* 主背景 - 最深 */
+  --bg-secondary: #0d1117; /* 次级背景 - 卡片/侧边栏 */
+  --bg-tertiary: #1a1e26; /* 三级背景 - hover/表头 */
+  --bg-elevated: #20242d; /* 悬浮元素 */
+
+  /* Border Colors */
+  --border-primary: #1a1e26;
+  --border-secondary: #2a2e36;
+  --border-hover: #3a3e46;
+
+  /* Text Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #c8ccd4;
+  --text-muted: #88909f;
+  --text-disabled: #5a606a;
+
+  /* Accent Colors - 品牌色 */
+  --accent-green: #00cf9d; /* 涨/买入 */
+  --accent-red: #ff4d4d; /* 跌/卖出 */
+  --accent-blue: #3b82f6; /* 链接/信息 */
+  --accent-yellow: #f59e0b; /* 警告 */
+  --accent-purple: #a855f7; /* 代币mint */
+
+  /* Accent Transparent */
+  --accent-green-10: rgba(0, 207, 157, 0.1);
+  --accent-green-15: rgba(0, 207, 157, 0.15);
+  --accent-green-20: rgba(0, 207, 157, 0.2);
+  --accent-red-10: rgba(255, 77, 77, 0.1);
+  --accent-red-15: rgba(255, 77, 77, 0.15);
+
+  /* Chart Colors */
+  --chart-grid: rgba(255, 255, 255, 0.03);
+  --chart-axis: rgba(255, 255, 255, 0.1);
+
+  /* Font */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
 }
 
+/* Tailwind Theme Extension */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
   --font-inter: var(--font-inter);
   --font-manrope: var(--font-manrope);
 }
 
+/* Base Styles */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
 }
 
-/* Custom Utilities for Glassmorphism */
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Glassmorphism */
 .glass {
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-primary);
 }
 
-/* Highlight animation for new items in virtualized lists */
+/* Card Styles */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 0.75rem;
+}
+
+.card-hover {
+  transition: border-color 0.2s ease;
+}
+
+.card-hover:hover {
+  border-color: var(--border-secondary);
+}
+
+/* Text Utilities */
+.text-up {
+  color: var(--accent-green);
+}
+.text-down {
+  color: var(--accent-red);
+}
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Badge Styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-buy {
+  background: var(--accent-green-15);
+  color: var(--accent-green);
+}
+
+.badge-sell {
+  background: var(--accent-red-15);
+  color: var(--accent-red);
+}
+
+/* Live Indicator */
+.live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Highlight Animation for New Items */
 @keyframes highlight-fade {
   0% {
-    background-color: rgba(34, 197, 94, 0.2);
+    background-color: var(--accent-green-20);
   }
   100% {
     background-color: transparent;
@@ -37,4 +152,116 @@ body {
 
 .animate-highlight {
   animation: highlight-fade 1s ease-out forwards;
+}
+
+/* Table Styles */
+.table-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.table-row {
+  border-bottom: 1px solid rgba(26, 30, 38, 0.5);
+  transition: background-color 0.2s ease;
+}
+
+.table-row:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Button Styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-active {
+  background: var(--accent-green-10);
+  color: var(--accent-green);
+}
+
+/* Scrollbar Styles */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-elevated) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--border-secondary);
+}
+
+/* ============================================
+   COMPONENT-SPECIFIC STYLES
+   ============================================ */
+
+/* Address/Hash Display */
+.address {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.address-link {
+  color: var(--accent-blue);
+  transition: color 0.2s ease;
+}
+
+.address-link:hover {
+  color: var(--accent-green);
+}
+
+/* Price Display */
+.price {
+  font-family: var(--font-mono);
+}
+
+.price-up {
+  color: var(--accent-green);
+}
+.price-down {
+  color: var(--accent-red);
+}
+
+/* Section Header */
+.section-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
