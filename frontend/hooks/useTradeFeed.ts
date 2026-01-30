@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSocket } from "../context/SocketContext";
 import { useSocketSubscription } from "./useSocketSubscription";
 import { Trade } from "../types";
+import { API } from "../config/api";
 
 export interface CandleData {
   time: number; // Unix timestamp in ms
@@ -98,12 +99,8 @@ export const useTradeFeed = (poolAddress: string) => {
       try {
         // Fetch historical candles and trades in parallel
         const [candlesRes, tradesRes] = await Promise.all([
-          fetch(
-            `http://localhost:3000/api/token/candles/${poolAddress}?resolution=${resolution}&from=0`,
-          ),
-          fetch(
-            `http://localhost:3000/api/token/trades/${poolAddress}?limit=100`,
-          ),
+          fetch(API.candles(poolAddress, resolution)),
+          fetch(API.trades(poolAddress, 100)),
         ]);
 
         const candlesData = await candlesRes.json();

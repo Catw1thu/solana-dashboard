@@ -8,6 +8,7 @@ import {
   ReactNode,
 } from "react";
 import io, { type Socket } from "socket.io-client";
+import { SOCKET_URL } from "../config/api";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -26,7 +27,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const socketInstance = io("http://localhost:3000/events", {
+    const socketInstance = io(SOCKET_URL, {
       transports: ["websocket"], // Force WebSocket to avoid polling loops if possible
       autoConnect: true,
     });

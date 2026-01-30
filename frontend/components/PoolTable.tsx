@@ -8,6 +8,7 @@ import { Play } from "lucide-react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { API } from "../config/api";
 
 // Row height in pixels - must be consistent for virtualization
 const ROW_HEIGHT = 52;
@@ -64,9 +65,7 @@ export const PoolTable = () => {
   useEffect(() => {
     const fetchPools = async () => {
       try {
-        const res = await fetch(
-          "http://localhost:3000/api/token/pools?limit=50",
-        );
+        const res = await fetch(`${API.pools}?limit=50`);
         const data = await res.json();
 
         const mappedPools: PoolData[] = data.map((p: any) => ({
