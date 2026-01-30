@@ -97,13 +97,13 @@ export const PoolTable = () => {
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
+    <div className="w-full overflow-hidden rounded-xl border border-(--border-primary) bg-(--bg-secondary)">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border-primary)] px-6 py-4">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-[var(--text-primary)]">
-          <Play className="h-5 w-5 fill-[var(--accent-green)] text-[var(--accent-green)]" />
+      <div className="flex items-center justify-between border-b border-(--border-primary) px-6 py-4">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-(--text-primary)">
+          <Play className="h-5 w-5 fill-(--accent-green) text-(--accent-green)" />
           Live New Pools
-          <span className="ml-2 text-sm font-normal text-[var(--text-muted)]">
+          <span className="ml-2 text-sm font-normal text-(--text-muted)">
             ({pools.length})
           </span>
         </h2>
@@ -125,7 +125,7 @@ export const PoolTable = () => {
         style={{ height: CONTAINER_HEIGHT }}
       >
         {pools.length === 0 ? (
-          <div className="px-6 py-8 text-center text-[var(--text-disabled)]">
+          <div className="px-6 py-8 text-center text-(--text-disabled)">
             Waiting for new pools...
           </div>
         ) : (
@@ -146,8 +146,8 @@ export const PoolTable = () => {
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   className={clsx(
-                    "absolute left-0 top-0 grid grid-cols-4 w-full cursor-pointer border-b border-[var(--border-primary)]/50 text-sm text-[var(--text-secondary)] transition-colors duration-200",
-                    "hover:bg-[var(--bg-tertiary)]",
+                    "absolute left-0 top-0 grid grid-cols-4 w-full cursor-pointer border-b border-(--border-primary)/50 text-sm text-(--text-secondary) transition-colors duration-200",
+                    "hover:bg-(--bg-tertiary)",
                     isNew && "animate-highlight",
                   )}
                   style={{
@@ -156,16 +156,16 @@ export const PoolTable = () => {
                   }}
                   onClick={() => router.push(`/pair/${pool.address}`)}
                 >
-                  <div className="flex items-center px-6 font-mono text-[var(--accent-blue)]">
+                  <div className="flex items-center px-6 font-mono text-(--accent-blue)">
                     {pool.address.slice(0, 6)}...{pool.address.slice(-4)}
                   </div>
-                  <div className="flex items-center px-6 font-mono text-[var(--accent-purple)]">
+                  <div className="flex items-center px-6 font-mono text-(--accent-purple)">
                     {pool.mint.slice(0, 6)}...{pool.mint.slice(-4)}
                   </div>
-                  <div className="flex items-center px-6 font-mono text-[var(--text-primary)]">
+                  <div className="flex items-center px-6 font-mono text-(--text-primary)">
                     {(Number(pool.solAmount) / 1e9).toFixed(2)} SOL
                   </div>
-                  <div className="flex items-center justify-end px-6 font-mono text-[var(--text-muted)]">
+                  <div className="flex items-center justify-end px-6 font-mono text-(--text-muted)">
                     {new Date(pool.timestamp).toLocaleTimeString()}
                   </div>
                 </div>

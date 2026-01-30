@@ -59,12 +59,12 @@ export default function TokenDetailPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans selection:bg-[var(--accent-green)]/30">
+    <div className="min-h-screen bg-(--bg-primary) text-(--text-primary) font-sans selection:bg-(--accent-green)/30">
       <main className="grid grid-cols-1 lg:grid-cols-4 min-h-screen">
         {/* Left Col: Chart & Live Trades */}
-        <div className="lg:col-span-3 flex flex-col border-r border-[var(--border-primary)]">
+        <div className="lg:col-span-3 flex flex-col border-r border-(--border-primary)">
           {/* Chart Section */}
-          <div className="h-[500px] border-b border-[var(--border-primary)]">
+          <div className="h-[500px] border-b border-(--border-primary)">
             <TradingChart
               data={candles}
               initialTimeframe={
@@ -75,22 +75,22 @@ export default function TokenDetailPage() {
           </div>
 
           {/* Live Trades Section */}
-          <div className="flex-1 flex flex-col bg-[var(--bg-secondary)]">
+          <div className="flex-1 flex flex-col bg-(--bg-secondary)">
             {/* Section Header */}
-            <div className="px-4 py-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-(--border-primary) bg-(--bg-secondary) flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="live-dot" />
-                <h3 className="font-semibold text-white text-sm">
+                <h3 className="font-semibold text-(--text-primary) text-sm">
                   Live Trades
                 </h3>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-(--text-muted)">
                   ({trades.length.toLocaleString()})
                 </span>
               </div>
             </div>
 
             {/* Table Header */}
-            <div className="grid grid-cols-7 gap-0 px-4 py-2 bg-[#0b0e11] border-b border-[#1a1e26] text-[11px] font-medium uppercase tracking-wider text-gray-500">
+            <div className="table-header grid grid-cols-7 gap-0 px-4 py-2">
               <div>Time</div>
               <div>Type</div>
               <div className="text-right">Price</div>
@@ -103,11 +103,11 @@ export default function TokenDetailPage() {
             {/* Virtualized Trade List */}
             <div
               ref={parentRef}
-              className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
+              className="flex-1 overflow-auto scrollbar-thin"
               style={{ height: TRADES_CONTAINER_HEIGHT }}
             >
               {trades.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                <div className="flex items-center justify-center h-full text-(--text-disabled) text-sm">
                   Waiting for trades...
                 </div>
               ) : (
@@ -127,8 +127,8 @@ export default function TokenDetailPage() {
                       <div
                         key={trade.txHash}
                         className={clsx(
-                          "absolute left-0 top-0 w-full grid grid-cols-7 gap-0 px-4 items-center text-[13px] border-b border-[#1a1e26]/50 transition-colors duration-200",
-                          "hover:bg-[#1a1e26]/50",
+                          "absolute left-0 top-0 w-full grid grid-cols-7 gap-0 px-4 items-center text-[13px] border-b border-(--border-primary)/50 transition-colors duration-200",
+                          "hover:bg-(--bg-tertiary)",
                           isNew && "animate-highlight",
                         )}
                         style={{
@@ -137,7 +137,7 @@ export default function TokenDetailPage() {
                         }}
                       >
                         {/* Time */}
-                        <div className="text-gray-400 font-mono text-xs">
+                        <div className="text-(--text-muted) font-mono text-xs">
                           {new Date(trade.time).toLocaleTimeString()}
                         </div>
 
@@ -145,10 +145,8 @@ export default function TokenDetailPage() {
                         <div>
                           <span
                             className={clsx(
-                              "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-                              isBuy
-                                ? "bg-[#00cf9d]/15 text-[#00cf9d]"
-                                : "bg-[#ff4d4d]/15 text-[#ff4d4d]",
+                              "badge",
+                              isBuy ? "badge-buy" : "badge-sell",
                             )}
                           >
                             {trade.type}
@@ -159,14 +157,16 @@ export default function TokenDetailPage() {
                         <div
                           className={clsx(
                             "text-right font-mono",
-                            isBuy ? "text-[#00cf9d]" : "text-[#ff4d4d]",
+                            isBuy
+                              ? "text-(--accent-green)"
+                              : "text-(--accent-red)",
                           )}
                         >
                           {formatPrice(trade.price)}
                         </div>
 
                         {/* Amount */}
-                        <div className="text-right font-mono text-gray-300">
+                        <div className="text-right font-mono text-(--text-secondary)">
                           {formatAmount(trade.baseAmount)}
                         </div>
 
@@ -174,14 +174,16 @@ export default function TokenDetailPage() {
                         <div
                           className={clsx(
                             "text-right font-mono font-medium",
-                            isBuy ? "text-[#00cf9d]" : "text-[#ff4d4d]",
+                            isBuy
+                              ? "text-(--accent-green)"
+                              : "text-(--accent-red)",
                           )}
                         >
                           {trade.quoteAmount.toFixed(3)}
                         </div>
 
                         {/* Maker Address */}
-                        <div className="text-right font-mono text-gray-500 text-xs">
+                        <div className="text-right font-mono text-(--text-muted) text-xs">
                           {formatAddress(trade.maker)}
                         </div>
 
@@ -191,7 +193,7 @@ export default function TokenDetailPage() {
                             href={`https://solscan.io/tx/${trade.txHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-[#1a1e26] text-gray-500 hover:text-[#00cf9d] transition-colors"
+                            className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-(--bg-tertiary) text-(--text-muted) hover:text-(--accent-green) transition-colors"
                           >
                             <ExternalLink size={12} />
                           </a>
@@ -206,9 +208,11 @@ export default function TokenDetailPage() {
         </div>
 
         {/* Right Col: Token Info */}
-        <div className="lg:col-span-1 bg-[#0d1117]">
-          <div className="p-4 border-b border-[#1a1e26]">
-            <h3 className="text-sm font-semibold text-white">Token Info</h3>
+        <div className="lg:col-span-1 bg-(--bg-secondary)">
+          <div className="p-4 border-b border-(--border-primary)">
+            <h3 className="text-sm font-semibold text-(--text-primary)">
+              Token Info
+            </h3>
           </div>
           <div className="p-4 space-y-3">
             {/* Placeholder Cards */}
@@ -216,26 +220,28 @@ export default function TokenDetailPage() {
               (label) => (
                 <div
                   key={label}
-                  className="p-4 rounded-lg bg-[#1a1e26]/30 border border-[#1a1e26] hover:border-[#2a2e36] transition-colors"
+                  className="p-4 rounded-lg bg-(--bg-tertiary)/30 border border-(--border-primary) hover:border-(--border-secondary) transition-colors"
                 >
-                  <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+                  <div className="text-[11px] uppercase tracking-wider text-(--text-muted) mb-1">
                     {label}
                   </div>
-                  <div className="text-lg font-semibold text-gray-400">--</div>
+                  <div className="text-lg font-semibold text-(--text-muted)">
+                    --
+                  </div>
                 </div>
               ),
             )}
 
             {/* Pool Address */}
-            <div className="p-4 rounded-lg bg-[#1a1e26]/30 border border-[#1a1e26]">
-              <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-2">
+            <div className="p-4 rounded-lg bg-(--bg-tertiary)/30 border border-(--border-primary)">
+              <div className="text-[11px] uppercase tracking-wider text-(--text-muted) mb-2">
                 Pool Address
               </div>
               <a
                 href={`https://solscan.io/account/${address}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm font-mono text-[#00cf9d] hover:underline"
+                className="flex items-center gap-2 text-sm font-mono text-(--accent-green) hover:underline"
               >
                 {formatAddress(address)}
                 <ExternalLink size={12} />
