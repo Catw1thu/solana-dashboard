@@ -5,54 +5,79 @@
    Inspired by GMGN.ai & DexScreener
    ============================================ */
 
-/* CSS Variables - 统一配色 */
-:root {
-  /* Background Colors - 从深到浅 */
-  --bg-primary: #0b0e11; /* 主背景 - 最深 */
-  --bg-secondary: #0d1117; /* 次级背景 - 卡片/侧边栏 */
-  --bg-tertiary: #1a1e26; /* 三级背景 - hover/表头 */
-  --bg-elevated: #20242d; /* 悬浮元素 */
+/* Tailwind v4 Theme - All theme tokens defined here */
+@theme inline {
+  /* Background Colors */
+  --color-bg-primary: #0b0e11;
+  --color-bg-secondary: #0d1117;
+  --color-bg-tertiary: #1a1e26;
+  --color-bg-elevated: #20242d;
 
   /* Border Colors */
+  --color-border-primary: #1a1e26;
+  --color-border-secondary: #2a2e36;
+  --color-border-hover: #3a3e46;
+
+  /* Text Colors */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #c8ccd4;
+  --color-text-muted: #88909f;
+  --color-text-disabled: #5a606a;
+
+  /* Accent Colors */
+  --color-accent-green: #00cf9d;
+  --color-accent-red: #ff4d4d;
+  --color-accent-blue: #3b82f6;
+  --color-accent-yellow: #f59e0b;
+  --color-accent-purple: #a855f7;
+
+  /* Accent Transparent */
+  --color-accent-green-10: oklch(77% 0.15 166 / 0.1);
+  --color-accent-green-15: oklch(77% 0.15 166 / 0.15);
+  --color-accent-green-20: oklch(77% 0.15 166 / 0.2);
+  --color-accent-red-15: oklch(65% 0.2 25 / 0.15);
+
+  /* Standard Tailwind mappings */
+  --color-background: #0b0e11;
+  --color-foreground: #ffffff;
+
+  /* Fonts */
+  --font-inter: var(--font-inter);
+  --font-manrope: var(--font-manrope);
+}
+
+/* Also define plain CSS variables for components that use var(--x) directly */
+:root {
+  --bg-primary: #0b0e11;
+  --bg-secondary: #0d1117;
+  --bg-tertiary: #1a1e26;
+  --bg-elevated: #20242d;
+
   --border-primary: #1a1e26;
   --border-secondary: #2a2e36;
   --border-hover: #3a3e46;
 
-  /* Text Colors */
   --text-primary: #ffffff;
   --text-secondary: #c8ccd4;
   --text-muted: #88909f;
   --text-disabled: #5a606a;
 
-  /* Accent Colors - 品牌色 */
-  --accent-green: #00cf9d; /* 涨/买入 */
-  --accent-red: #ff4d4d; /* 跌/卖出 */
-  --accent-blue: #3b82f6; /* 链接/信息 */
-  --accent-yellow: #f59e0b; /* 警告 */
-  --accent-purple: #a855f7; /* 代币mint */
+  --accent-green: #00cf9d;
+  --accent-red: #ff4d4d;
+  --accent-blue: #3b82f6;
+  --accent-yellow: #f59e0b;
+  --accent-purple: #a855f7;
 
-  /* Accent Transparent */
   --accent-green-10: rgba(0, 207, 157, 0.1);
   --accent-green-15: rgba(0, 207, 157, 0.15);
   --accent-green-20: rgba(0, 207, 157, 0.2);
-  --accent-red-10: rgba(255, 77, 77, 0.1);
   --accent-red-15: rgba(255, 77, 77, 0.15);
 
-  /* Chart Colors */
   --chart-grid: rgba(255, 255, 255, 0.03);
   --chart-axis: rgba(255, 255, 255, 0.1);
 
-  /* Font */
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
-}
-
-/* Tailwind Theme Extension */
-@theme inline {
-  --color-background: var(--bg-primary);
-  --color-foreground: var(--text-primary);
-  --font-inter: var(--font-inter);
-  --font-manrope: var(--font-manrope);
 }
 
 /* Base Styles */
@@ -94,9 +119,6 @@ body {
 }
 .text-down {
   color: var(--accent-red);
-}
-.text-muted {
-  color: var(--text-muted);
 }
 
 /* Badge Styles */
