@@ -93,9 +93,9 @@ export default function TokenDetailPage() {
             <div className="table-header grid grid-cols-7 gap-0 px-4 py-2">
               <div>Time</div>
               <div>Type</div>
-              <div className="text-right">Price</div>
-              <div className="text-right">Amount</div>
-              <div className="text-right">SOL</div>
+              <div>Price</div>
+              <div>Amount</div>
+              <div>SOL</div>
               <div>Maker</div>
               <div className="text-right">Tx</div>
             </div>
@@ -156,7 +156,7 @@ export default function TokenDetailPage() {
                         {/* Price */}
                         <div
                           className={clsx(
-                            "text-right font-mono",
+                            "font-mono",
                             isBuy
                               ? "text-(--accent-green)"
                               : "text-(--accent-red)",
@@ -166,14 +166,14 @@ export default function TokenDetailPage() {
                         </div>
 
                         {/* Amount */}
-                        <div className="text-right font-mono text-(--text-secondary)">
+                        <div className="font-mono text-(--text-secondary)">
                           {formatAmount(trade.baseAmount)}
                         </div>
 
                         {/* SOL Value */}
                         <div
                           className={clsx(
-                            "text-right font-mono font-medium",
+                            "font-mono font-medium",
                             isBuy
                               ? "text-(--accent-green)"
                               : "text-(--accent-red)",
@@ -183,7 +183,7 @@ export default function TokenDetailPage() {
                         </div>
 
                         {/* Maker Address */}
-                        <div className="text-right font-mono text-(--text-muted) text-xs">
+                        <div className="font-mono text-(--text-muted) text-xs">
                           {formatAddress(trade.maker)}
                         </div>
 

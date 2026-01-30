@@ -112,10 +112,10 @@ export const PoolTable = () => {
 
       {/* Table Header (Fixed) */}
       <div className="table-header grid grid-cols-4 px-6">
-        <div className="py-3">Pool Address</div>
-        <div className="py-3">Token Mint</div>
-        <div className="py-3">Initial SOL</div>
-        <div className="py-3 text-right">Time</div>
+        <div className="px-6 py-3">Pool Address</div>
+        <div className="px-6 py-3">Token Mint</div>
+        <div className="px-6 py-3">Initial SOL</div>
+        <div className="px-6 py-3 text-right">Time</div>
       </div>
 
       {/* Virtualized Table Body */}
