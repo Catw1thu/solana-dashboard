@@ -59,12 +59,12 @@ export default function TokenDetailPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#0b0e11] text-white font-sans selection:bg-[#00cf9d]/30">
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans selection:bg-[var(--accent-green)]/30">
       <main className="grid grid-cols-1 lg:grid-cols-4 min-h-screen">
         {/* Left Col: Chart & Live Trades */}
-        <div className="lg:col-span-3 flex flex-col border-r border-[#1a1e26]">
+        <div className="lg:col-span-3 flex flex-col border-r border-[var(--border-primary)]">
           {/* Chart Section */}
-          <div className="h-[500px] border-b border-[#1a1e26]">
+          <div className="h-[500px] border-b border-[var(--border-primary)]">
             <TradingChart
               data={candles}
               initialTimeframe={
@@ -75,11 +75,11 @@ export default function TokenDetailPage() {
           </div>
 
           {/* Live Trades Section */}
-          <div className="flex-1 flex flex-col bg-[#0d1117]">
+          <div className="flex-1 flex flex-col bg-[var(--bg-secondary)]">
             {/* Section Header */}
-            <div className="px-4 py-3 border-b border-[#1a1e26] bg-[#0d1117] flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#00cf9d] animate-pulse shadow-[0_0_8px_#00cf9d]" />
+                <span className="live-dot" />
                 <h3 className="font-semibold text-white text-sm">
                   Live Trades
                 </h3>

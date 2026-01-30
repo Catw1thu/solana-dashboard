@@ -97,37 +97,35 @@ export const PoolTable = () => {
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-white/5 backdrop-blur-md">
+    <div className="w-full overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
-          <Play className="h-5 w-5 fill-green-500 text-green-500" />
+      <div className="flex items-center justify-between border-b border-[var(--border-primary)] px-6 py-4">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-[var(--text-primary)]">
+          <Play className="h-5 w-5 fill-[var(--accent-green)] text-[var(--accent-green)]" />
           Live New Pools
-          <span className="ml-2 text-sm font-normal text-gray-500">
+          <span className="ml-2 text-sm font-normal text-[var(--text-muted)]">
             ({pools.length})
           </span>
         </h2>
-        <span className="flex h-2 w-2 animate-pulse rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]"></span>
+        <span className="live-dot" />
       </div>
 
       {/* Table Header (Fixed) */}
-      <div className="bg-white/5 text-xs uppercase text-gray-200">
-        <div className="flex">
-          <div className="w-1/4 px-6 py-3 font-medium">Pool Address</div>
-          <div className="w-1/4 px-6 py-3 font-medium">Token Mint</div>
-          <div className="w-1/4 px-6 py-3 font-medium">Initial SOL</div>
-          <div className="w-1/4 px-6 py-3 font-medium text-right">Time</div>
-        </div>
+      <div className="table-header grid grid-cols-4 px-6">
+        <div className="py-3">Pool Address</div>
+        <div className="py-3">Token Mint</div>
+        <div className="py-3">Initial SOL</div>
+        <div className="py-3 text-right">Time</div>
       </div>
 
       {/* Virtualized Table Body */}
       <div
         ref={parentRef}
-        className="overflow-auto"
+        className="overflow-auto scrollbar-thin"
         style={{ height: CONTAINER_HEIGHT }}
       >
         {pools.length === 0 ? (
-          <div className="px-6 py-8 text-center text-gray-600">
+          <div className="px-6 py-8 text-center text-[var(--text-disabled)]">
             Waiting for new pools...
           </div>
         ) : (
@@ -148,8 +146,9 @@ export const PoolTable = () => {
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   className={clsx(
-                    "absolute left-0 top-0 flex w-full cursor-pointer border-b border-white/5 text-sm text-gray-400 transition-colors duration-300 hover:bg-white/5",
-                    isNew && "animate-highlight bg-green-500/10",
+                    "absolute left-0 top-0 grid grid-cols-4 w-full cursor-pointer border-b border-[var(--border-primary)]/50 text-sm text-[var(--text-secondary)] transition-colors duration-200",
+                    "hover:bg-[var(--bg-tertiary)]",
+                    isNew && "animate-highlight",
                   )}
                   style={{
                     height: `${ROW_HEIGHT}px`,
@@ -157,16 +156,16 @@ export const PoolTable = () => {
                   }}
                   onClick={() => router.push(`/pair/${pool.address}`)}
                 >
-                  <div className="flex w-1/4 items-center px-6 font-mono text-blue-400">
+                  <div className="flex items-center px-6 font-mono text-[var(--accent-blue)]">
                     {pool.address.slice(0, 6)}...{pool.address.slice(-4)}
                   </div>
-                  <div className="flex w-1/4 items-center px-6 font-mono text-purple-400">
+                  <div className="flex items-center px-6 font-mono text-[var(--accent-purple)]">
                     {pool.mint.slice(0, 6)}...{pool.mint.slice(-4)}
                   </div>
-                  <div className="flex w-1/4 items-center px-6 font-mono text-white">
+                  <div className="flex items-center px-6 font-mono text-[var(--text-primary)]">
                     {(Number(pool.solAmount) / 1e9).toFixed(2)} SOL
                   </div>
-                  <div className="flex w-1/4 items-center justify-end px-6 font-mono text-gray-500">
+                  <div className="flex items-center justify-end px-6 font-mono text-[var(--text-muted)]">
                     {new Date(pool.timestamp).toLocaleTimeString()}
                   </div>
                 </div>

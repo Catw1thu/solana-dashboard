@@ -274,17 +274,17 @@ export const TradingChart = ({
   return (
     <div className="relative w-full h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b border-white/5">
+      <div className="flex items-center justify-between p-3 border-b border-[var(--border-primary)]">
         <div className="flex gap-1">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf}
               onClick={() => handleTimeframeClick(tf)}
               className={clsx(
-                "px-2 py-1 text-xs rounded hover:bg-[#20242d] transition-colors",
+                "px-2 py-1 text-xs rounded hover:bg-[var(--bg-elevated)] transition-colors",
                 timeframe === tf
-                  ? "text-[#00cf9d] bg-[#00cf9d]/10 font-semibold"
-                  : "text-[#88909f]",
+                  ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10 font-semibold"
+                  : "text-[var(--text-muted)]",
               )}
             >
               {tf}
@@ -298,8 +298,8 @@ export const TradingChart = ({
             className={clsx(
               "px-2 py-1 text-xs rounded border transition-colors",
               showVolume
-                ? "border-[#00cf9d]/50 text-[#00cf9d]"
-                : "border-transparent text-[#88909f] hover:text-[#ffffff]",
+                ? "border-[var(--accent-green)]/50 text-[var(--accent-green)]"
+                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]",
             )}
           >
             Vol
