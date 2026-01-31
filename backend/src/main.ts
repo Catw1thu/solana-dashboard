@@ -16,9 +16,13 @@ async function bootstrap() {
     logger: ['error', 'warn'], // 仅保留错误和警告，过滤掉普通日志以方便排查问题
   });
 
-  // Enable CORS for frontend development
+  // Enable CORS - only allow local and this server's frontend
   app.enableCors({
-    origin: ['http://localhost:3001', 'http://127.0.0.1:3001'],
+    origin: [
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://173.249.210.151:3001', // This server's public IP
+    ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
