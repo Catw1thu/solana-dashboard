@@ -45,46 +45,81 @@
   --font-inter: var(--font-inter);
   --font-manrope: var(--font-manrope);
 }
+/* Theme Variables - wrapped in @layer base to prevent purging */
+@layer base {
+  /* Dark Theme (default) */
+  :root,
+  [data-theme="dark"] {
+    --bg-primary: #0b0e11;
+    --bg-secondary: #0d1117;
+    --bg-tertiary: #1a1e26;
+    --bg-elevated: #20242d;
 
-/* Also define plain CSS variables for components that use var(--x) directly */
-:root {
-  --bg-primary: #0b0e11;
-  --bg-secondary: #0d1117;
-  --bg-tertiary: #1a1e26;
-  --bg-elevated: #20242d;
+    --border-primary: #1a1e26;
+    --border-secondary: #2a2e36;
+    --border-hover: #3a3e46;
 
-  --border-primary: #1a1e26;
-  --border-secondary: #2a2e36;
-  --border-hover: #3a3e46;
+    --text-primary: #ffffff;
+    --text-secondary: #c8ccd4;
+    --text-muted: #88909f;
+    --text-disabled: #5a606a;
 
-  --text-primary: #ffffff;
-  --text-secondary: #c8ccd4;
-  --text-muted: #88909f;
-  --text-disabled: #5a606a;
+    --accent-green: #00cf9d;
+    --accent-red: #ff4d4d;
+    --accent-blue: #3b82f6;
+    --accent-yellow: #f59e0b;
+    --accent-purple: #a855f7;
 
-  --accent-green: #00cf9d;
-  --accent-red: #ff4d4d;
-  --accent-blue: #3b82f6;
-  --accent-yellow: #f59e0b;
-  --accent-purple: #a855f7;
+    --accent-green-10: rgba(0, 207, 157, 0.1);
+    --accent-green-15: rgba(0, 207, 157, 0.15);
+    --accent-green-20: rgba(0, 207, 157, 0.2);
+    --accent-red-15: rgba(255, 77, 77, 0.15);
 
-  --accent-green-10: rgba(0, 207, 157, 0.1);
-  --accent-green-15: rgba(0, 207, 157, 0.15);
-  --accent-green-20: rgba(0, 207, 157, 0.2);
-  --accent-red-15: rgba(255, 77, 77, 0.15);
+    --chart-grid: rgba(255, 255, 255, 0.03);
+    --chart-axis: rgba(255, 255, 255, 0.1);
 
-  --chart-grid: rgba(255, 255, 255, 0.03);
-  --chart-axis: rgba(255, 255, 255, 0.1);
+    --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
+  }
 
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
-}
+  /* Light Theme */
+  [data-theme="light"] {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --bg-elevated: #e2e8f0;
 
-/* Base Styles */
-body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
+    --border-primary: #e2e8f0;
+    --border-secondary: #cbd5e1;
+    --border-hover: #94a3b8;
+
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-disabled: #94a3b8;
+
+    --accent-green: #059669;
+    --accent-red: #dc2626;
+    --accent-blue: #2563eb;
+    --accent-yellow: #d97706;
+    --accent-purple: #7c3aed;
+
+    --accent-green-10: rgba(5, 150, 105, 0.1);
+    --accent-green-15: rgba(5, 150, 105, 0.15);
+    --accent-green-20: rgba(5, 150, 105, 0.2);
+    --accent-red-15: rgba(220, 38, 38, 0.15);
+
+    --chart-grid: rgba(0, 0, 0, 0.03);
+    --chart-axis: rgba(0, 0, 0, 0.1);
+  }
+
+  /* Base Styles */
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
 }
 
 /* ============================================
