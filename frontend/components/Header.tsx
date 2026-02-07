@@ -9,7 +9,7 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-50 border-b border-(--border-primary) bg-(--bg-primary)/80 backdrop-blur-xl">
-      <div className="container mx-auto flex h-14 items-center justify-between px-4">
+      <div className="w-full flex h-14 items-center justify-between px-6">
         {/* Left Side: Logo & Title */}
         <Link
           href="/"
