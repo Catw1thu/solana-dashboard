@@ -14,8 +14,6 @@ import { API } from "../config/api";
 const ROW_HEIGHT = 52;
 // Maximum number of pools to keep in memory
 const MAX_POOLS = 500;
-// Container height for the virtual list
-const CONTAINER_HEIGHT = 400;
 
 export const PoolTable = () => {
   const { socket } = useSocket();
@@ -25,9 +23,43 @@ export const PoolTable = () => {
   const [newPoolAddresses, setNewPoolAddresses] = useState<Set<string>>(
     new Set(),
   );
+  // Track container height for virtualization
+  const [containerHeight, setContainerHeight] = useState(400);
 
   // Reference to the scrollable container
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // Measure container height on mount and resize
+  useEffect(() => {
+    const updateHeight = () => {
+      if (parentRef.current?.parentElement) {
+        // Get the total height available for the PoolTable
+        const parent = parentRef.current.parentElement;
+        const headerHeight =
+          parent
+            .querySelector(".flex.items-center.justify-between")
+            ?.getBoundingClientRect().height || 60;
+        const tableHeaderHeight =
+          parent.querySelector(".table-header")?.getBoundingClientRect()
+            .height || 44;
+        const availableHeight =
+          parent.getBoundingClientRect().height -
+          headerHeight -
+          tableHeaderHeight;
+        setContainerHeight(Math.max(200, availableHeight));
+      }
+    };
+
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    // Also update after a short delay to ensure layout is complete
+    const timer = setTimeout(updateHeight, 100);
+
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      clearTimeout(timer);
+    };
+  }, []);
 
   // 1. Subscribe to Global Room
   useSocketSubscription("room:global");
@@ -96,7 +128,7 @@ export const PoolTable = () => {
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-(--border-primary) bg-(--bg-secondary)">
+    <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-(--border-primary) bg-(--bg-secondary)">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-(--border-primary) px-6 py-4">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-(--text-primary)">
@@ -121,7 +153,7 @@ export const PoolTable = () => {
       <div
         ref={parentRef}
         className="overflow-auto scrollbar-thin"
-        style={{ height: CONTAINER_HEIGHT }}
+        style={{ height: containerHeight }}
       >
         {pools.length === 0 ? (
           <div className="px-6 py-8 text-center text-(--text-disabled)">

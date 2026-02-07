@@ -4,7 +4,7 @@ import { PoolTable } from "../components/PoolTable";
 
 export default function Home() {
   return (
-    <main className="container mx-auto px-4 py-6">
+    <main className="w-full px-6 py-6 h-[calc(100vh-56px)] flex flex-col overflow-hidden">
       {/* Page Title */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold tracking-tight">Market Overview</h2>
@@ -13,7 +13,9 @@ export default function Home() {
         </p>
       </div>
 
-      <PoolTable />
+      <div className="flex-1 flex flex-col">
+        <PoolTable />
+      </div>
     </main>
   );
 }
