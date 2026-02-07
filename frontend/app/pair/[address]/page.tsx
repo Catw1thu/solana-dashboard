@@ -11,16 +11,19 @@ import clsx from "clsx";
 
 // 虚拟化配置
 const TRADE_ROW_HEIGHT = 36;
-const TRADES_CONTAINER_HEIGHT = 400;
 
 export default function TokenDetailPage() {
   const parentRef = useRef<HTMLDivElement>(null);
+  const tradesContainerRef = useRef<HTMLDivElement>(null);
   const params = useParams();
   const address = params?.address as string;
 
   // 新交易高亮追踪
   const [newTrades, setNewTrades] = useState<Set<string>>(new Set());
   const prevTradesRef = useRef<string[]>([]);
+
+  // 交易列表容器高度（用于虚拟化）
+  const [tradesListHeight, setTradesListHeight] = useState(400);
 
   // 数据源
   const { trades, candles, resolution, setResolution } = useTradeFeed(address);
@@ -58,12 +61,56 @@ export default function TokenDetailPage() {
     overscan: 10,
   });
 
+  // 计算交易列表容器高度
+  useEffect(() => {
+    const updateHeight = () => {
+      if (tradesContainerRef.current) {
+        const container = tradesContainerRef.current;
+        // 获取 header 和 table header 的高度
+        const sectionHeader = container.querySelector(
+          ".flex.items-center.justify-between",
+        );
+        const tableHeader = container.querySelector(".table-header");
+        const headerHeight =
+          sectionHeader?.getBoundingClientRect().height || 48;
+        const tableHeaderHeight =
+          tableHeader?.getBoundingClientRect().height || 32;
+
+        // 计算可用高度：视口高度 - 固定头部(56px) - Chart高度(在小屏幕上可能已滚动出视口) - section headers
+        const viewportHeight = window.innerHeight;
+        const chartHeight = 500; // Chart 固定高度
+        const headerBarHeight = 56; // 顶部导航栏
+
+        // 最小高度确保 trades 区域至少占满视口剩余部分
+        const minTradesHeight =
+          viewportHeight -
+          headerBarHeight -
+          chartHeight -
+          headerHeight -
+          tableHeaderHeight;
+        // 但也不能太小
+        const finalHeight = Math.max(200, minTradesHeight);
+
+        setTradesListHeight(finalHeight);
+      }
+    };
+
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    const timer = setTimeout(updateHeight, 100);
+
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      clearTimeout(timer);
+    };
+  }, []);
+
   return (
-    <main className="grid grid-cols-1 lg:grid-cols-4 min-h-[calc(100vh-56px)]">
+    <main className="grid grid-cols-1 lg:grid-cols-4">
       {/* Left Col: Chart & Live Trades */}
-      <div className="lg:col-span-3 flex flex-col border-r border-(--border-primary)">
-        {/* Chart Section */}
-        <div className="h-[500px] border-b border-(--border-primary)">
+      <div className="col-span-1 lg:col-span-3 flex flex-col lg:border-r border-(--border-primary) order-1">
+        {/* Chart Section - 固定高度 */}
+        <div className="h-[500px] border-b border-(--border-primary) shrink-0">
           <TradingChart
             data={candles}
             initialTimeframe={
@@ -73,8 +120,12 @@ export default function TokenDetailPage() {
           />
         </div>
 
-        {/* Live Trades Section */}
-        <div className="flex-1 flex flex-col bg-(--bg-secondary)">
+        {/* Live Trades Section - fixed height = viewport - header, so window scrolls exactly 500px (chart height) */}
+        <div
+          ref={tradesContainerRef}
+          className="flex flex-col bg-(--bg-secondary) overflow-hidden"
+          style={{ height: "calc(100vh - 56px)" }}
+        >
           {/* Section Header */}
           <div className="px-4 py-3 border-b border-(--border-primary) bg-(--bg-secondary) flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -99,11 +150,11 @@ export default function TokenDetailPage() {
             <div className="text-right">Tx</div>
           </div>
 
-          {/* Virtualized Trade List */}
+          {/* Virtualized Trade List - uses CSS calc for responsive height */}
           <div
             ref={parentRef}
             className="flex-1 overflow-auto scrollbar-thin"
-            style={{ height: TRADES_CONTAINER_HEIGHT }}
+            style={{ height: "calc(100vh - 56px - 48px - 32px)" }}
           >
             {trades.length === 0 ? (
               <div className="flex items-center justify-center h-full text-(--text-disabled) text-sm">
@@ -206,8 +257,8 @@ export default function TokenDetailPage() {
         </div>
       </div>
 
-      {/* Right Col: Token Info */}
-      <div className="lg:col-span-1 bg-(--bg-secondary)">
+      {/* Right Col: Token Info - visible on all screen sizes */}
+      <div className="col-span-1 bg-(--bg-secondary) order-2 lg:order-2 border-t lg:border-t-0 border-(--border-primary)">
         <div className="p-4 border-b border-(--border-primary)">
           <h3 className="text-sm font-semibold text-(--text-primary)">
             Token Info
