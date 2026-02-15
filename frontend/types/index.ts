@@ -24,6 +24,8 @@ export interface PoolData {
   txns5m?: number;
   buys5m?: number;
   sells5m?: number;
+  liquidity?: number | null;
+  mcap?: number | null;
 }
 
 export interface PoolDetail {
@@ -60,4 +62,6 @@ export interface PoolStats {
   sells6h: number;
   buys24h: number;
   sells24h: number;
+  liquidity: number | null;
+  mcap: number | null;
 }

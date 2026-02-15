@@ -27,6 +27,9 @@ model Pool {
   symbol        String?  // 代币符号
   image         String?  // 代币图片URL
 
+  baseReserves  Float?   // 池子中 base token 余额 (human-readable)
+  quoteReserves Float?   // 池子中 quote token (SOL) 余额 (human-readable)
+
   createdAt     DateTime @default(now())
 
   trades        Trade[]

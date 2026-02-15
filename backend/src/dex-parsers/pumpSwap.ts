@@ -29,6 +29,8 @@ export interface PumpSwapTradeEvent {
   limitSolAmount: bigint;
   protocolFee: bigint;
   lpFee: bigint;
+  poolBaseReserves: bigint;
+  poolQuoteReserves: bigint;
   price: number;
   timestamp: number;
 }
@@ -198,6 +200,8 @@ export class PumpSwapParser {
         solAmount: maxQuoteAmountIn,
         protocolFee: BigInt(0),
         lpFee: BigInt(0),
+        poolBaseReserves: BigInt(0),
+        poolQuoteReserves: BigInt(0),
         price: 0,
         timestamp: Date.now(),
       };
@@ -242,6 +246,8 @@ export class PumpSwapParser {
         solAmount: minQuoteAmountOut,
         protocolFee: BigInt(0),
         lpFee: BigInt(0),
+        poolBaseReserves: BigInt(0),
+        poolQuoteReserves: BigInt(0),
         price: 0,
         timestamp: Date.now(),
       };
@@ -297,6 +303,8 @@ export class PumpSwapParser {
       event.solAmount = data.readBigUInt64LE(120);
       event.lpFee = data.readBigInt64LE(88);
       event.protocolFee = data.readBigInt64LE(104);
+      event.poolBaseReserves = data.readBigUInt64LE(56);
+      event.poolQuoteReserves = data.readBigUInt64LE(64);
 
       if (Number(event.tokenAmount) > 0) {
         event.price = Number(event.tokenAmount) / Number(event.solAmount);

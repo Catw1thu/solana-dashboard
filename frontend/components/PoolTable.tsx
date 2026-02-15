@@ -122,6 +122,8 @@ export const PoolTable = () => {
           txns5m: p.txns5m,
           buys5m: p.buys5m,
           sells5m: p.sells5m,
+          liquidity: p.liquidity,
+          mcap: p.mcap,
         }));
 
         setPools(mappedPools);
@@ -154,6 +156,7 @@ export const PoolTable = () => {
   };
 
   const formatVolume = (vol: number) => {
+    if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
     if (vol >= 1000) return `${(vol / 1000).toFixed(1)}K`;
     if (vol >= 1) return vol.toFixed(1);
     return vol.toFixed(2);
@@ -173,11 +176,13 @@ export const PoolTable = () => {
         <span className="live-dot" />
       </div>
 
-      {/* Table Header — 6 columns */}
-      <div className="table-header grid grid-cols-[2fr_1.2fr_1fr_1fr_0.8fr_0.6fr] px-4">
+      {/* Table Header — 8 columns */}
+      <div className="table-header grid grid-cols-[2fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.6fr_0.5fr] px-4">
         <div className="px-3 py-3">Token</div>
         <div className="px-3 py-3">Price</div>
         <div className="px-3 py-3">5m %</div>
+        <div className="px-3 py-3">Liq</div>
+        <div className="px-3 py-3">MCap</div>
         <div className="px-3 py-3">Vol (5m)</div>
         <div className="px-3 py-3">Txns</div>
         <div className="px-3 py-3 text-right">Age</div>
@@ -215,7 +220,7 @@ export const PoolTable = () => {
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   className={clsx(
-                    "absolute left-0 top-0 grid grid-cols-[2fr_1.2fr_1fr_1fr_0.8fr_0.6fr] w-full cursor-pointer border-b border-(--border-primary)/50 text-sm text-(--text-secondary) transition-colors duration-200",
+                    "absolute left-0 top-0 grid grid-cols-[2fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.6fr_0.5fr] w-full cursor-pointer border-b border-(--border-primary)/50 text-sm text-(--text-secondary) transition-colors duration-200",
                     "hover:bg-(--bg-tertiary)",
                     isNew && "animate-highlight",
                   )}
@@ -291,6 +296,20 @@ export const PoolTable = () => {
                     ) : (
                       <span className="text-(--text-muted) text-xs">--</span>
                     )}
+                  </div>
+
+                  {/* Liquidity */}
+                  <div className="flex items-center px-3 font-mono text-xs text-(--text-secondary)">
+                    {pool.liquidity != null
+                      ? `${formatVolume(pool.liquidity)} SOL`
+                      : "--"}
+                  </div>
+
+                  {/* MCap */}
+                  <div className="flex items-center px-3 font-mono text-xs text-(--text-secondary)">
+                    {pool.mcap != null
+                      ? `${formatVolume(pool.mcap)} SOL`
+                      : "--"}
                   </div>
 
                   {/* Volume 5m */}

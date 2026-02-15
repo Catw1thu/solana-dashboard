@@ -244,6 +244,7 @@ export default function TokenDetailPage() {
   };
 
   const formatVolume = (vol: number) => {
+    if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
     if (vol >= 1000) return `${(vol / 1000).toFixed(1)}K`;
     return vol.toFixed(2);
   };
@@ -525,6 +526,30 @@ export default function TokenDetailPage() {
               {priceChange !== null && isTrendDown && (
                 <TrendingDown size={18} className="text-(--accent-red)" />
               )}
+            </div>
+          </div>
+
+          {/* Liquidity */}
+          <div className="p-4 rounded-lg bg-(--bg-tertiary)/30 border border-(--border-primary)">
+            <div className="text-[11px] uppercase tracking-wider text-(--text-muted) mb-1">
+              Liquidity
+            </div>
+            <div className="text-lg font-semibold font-mono text-(--text-primary)">
+              {poolStats?.liquidity != null
+                ? `${formatVolume(poolStats.liquidity)} SOL`
+                : "--"}
+            </div>
+          </div>
+
+          {/* MCap */}
+          <div className="p-4 rounded-lg bg-(--bg-tertiary)/30 border border-(--border-primary)">
+            <div className="text-[11px] uppercase tracking-wider text-(--text-muted) mb-1">
+              Market Cap
+            </div>
+            <div className="text-lg font-semibold font-mono text-(--text-primary)">
+              {poolStats?.mcap != null
+                ? `${formatVolume(poolStats.mcap)} SOL`
+                : "--"}
             </div>
           </div>
 

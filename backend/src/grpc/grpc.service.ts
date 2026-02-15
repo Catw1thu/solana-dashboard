@@ -352,6 +352,19 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
           maker: event.user,
         });
 
+        // Update pool reserves for liquidity tracking
+        if (
+          Number(event.poolBaseReserves) > 0 ||
+          Number(event.poolQuoteReserves) > 0
+        ) {
+          const baseReserves = Number(event.poolBaseReserves) / baseFactor;
+          const quoteReserves = Number(event.poolQuoteReserves) / quoteFactor;
+          await this.databaseService.pool.update({
+            where: { address: event.pool },
+            data: { baseReserves, quoteReserves },
+          });
+        }
+
         // Add to batcher
         this.batcherService.addTrade(event.pool, {
           txHash: `https://solscan.io/tx/${event.signature}`,

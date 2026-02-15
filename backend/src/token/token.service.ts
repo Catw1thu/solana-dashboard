@@ -61,6 +61,8 @@ export class TokenService {
         -- 5m aggregates
         COALESCE((SELECT SUM("quoteAmount") FROM "Trade" WHERE "poolAddress" = p.address AND time >= ${t5m}), 0) AS volume_5m,
         COALESCE((SELECT COUNT(*)::int FROM "Trade" WHERE "poolAddress" = p.address AND time >= ${t5m}), 0) AS txns_5m,
+        p."baseReserves",
+        p."quoteReserves",
         COALESCE((SELECT COUNT(CASE WHEN type = 'BUY' THEN 1 END)::int FROM "Trade" WHERE "poolAddress" = p.address AND time >= ${t5m}), 0) AS buys_5m,
         COALESCE((SELECT COUNT(CASE WHEN type = 'SELL' THEN 1 END)::int FROM "Trade" WHERE "poolAddress" = p.address AND time >= ${t5m}), 0) AS sells_5m
       FROM "Pool" p
@@ -87,6 +89,10 @@ export class TokenService {
       txns5m: r.txns_5m,
       buys5m: r.buys_5m,
       sells5m: r.sells_5m,
+      // Liquidity = quote reserves (SOL) × 2 (standard AMM)
+      liquidity: r.quoteReserves ? r.quoteReserves * 2 : null,
+      // MCap = price × 1B (PumpFun total supply)
+      mcap: r.price ? r.price * 1_000_000_000 : null,
     }));
   }
 
@@ -178,7 +184,7 @@ export class TokenService {
       return ((now - then) / then) * 100;
     };
 
-    return {
+    const tradeStats = {
       price: p.price_now,
       priceChange5m: calcChange(p.price_now, p.price_5m_ago),
       priceChange1h: calcChange(p.price_now, p.price_1h_ago),
@@ -200,6 +206,18 @@ export class TokenService {
       sells6h: s.sells_6h,
       buys24h: s.buys_24h,
       sells24h: s.sells_24h,
+    };
+
+    // Fetch pool reserves for liquidity + mcap
+    const pool = await this.db.pool.findUnique({
+      where: { address: poolAddress },
+      select: { baseReserves: true, quoteReserves: true },
+    });
+
+    return {
+      ...tradeStats,
+      liquidity: pool?.quoteReserves ? pool.quoteReserves * 2 : null,
+      mcap: tradeStats.price ? tradeStats.price * 1_000_000_000 : null,
     };
   }
 
