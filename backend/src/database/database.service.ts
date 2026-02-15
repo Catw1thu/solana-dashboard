@@ -64,7 +64,7 @@ export class DatabaseService extends PrismaClient implements OnModuleInit {
     poolAddress: string,
     metadata: { name?: string; symbol?: string; image?: string },
   ) {
-    return this.pool.update({
+    return this.pool.updateMany({
       where: { address: poolAddress },
       data: {
         ...metadata,

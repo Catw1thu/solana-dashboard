@@ -309,7 +309,10 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         //     `  - Time     : ${new Date(event.timestamp).toISOString()}`,
         //   ].join('\n'),
         // );
-        this.metadataService.queueFetch(event.pool, event.baseMint);
+        // Skip SOL native mint — it has no token metadata
+        if (event.baseMint !== 'So11111111111111111111111111111111111111112') {
+          this.metadataService.queueFetch(event.pool, event.baseMint);
+        }
       }
       if (
         (event.type === 'BUY' || event.type === 'SELL') &&
