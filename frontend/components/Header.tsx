@@ -6,7 +6,6 @@ import { Activity, Sun, Moon, Search, X } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { API } from "../config/api";
-import { formatPrice } from "../utils/format";
 
 interface SearchResult {
   mint: string;
@@ -26,7 +25,7 @@ export const Header = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Debounced search
   const doSearch = useCallback(async (q: string) => {
@@ -151,7 +150,7 @@ export const Header = () => {
 
           {/* Dropdown */}
           {isOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-(--border-primary) bg-(--bg-secondary) shadow-xl overflow-hidden z-[60]">
+            <div className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-(--border-primary) bg-(--bg-secondary) shadow-xl overflow-hidden z-60">
               {isLoading ? (
                 <div className="px-4 py-3 text-sm text-(--text-muted) text-center">
                   Searching...
@@ -199,12 +198,10 @@ export const Header = () => {
                             `${r.mint.slice(0, 8)}...${r.mint.slice(-4)}`}
                         </span>
                       </div>
-                      {/* Price */}
-                      {r.price != null && (
-                        <span className="text-xs font-mono text-(--text-secondary) shrink-0">
-                          {formatPrice(r.price)} SOL
-                        </span>
-                      )}
+                      {/* Mint */}
+                      <span className="text-xs font-mono text-(--text-muted) shrink-0">
+                        {r.mint.slice(0, 4)}...{r.mint.slice(-4)}
+                      </span>
                     </button>
                   ))}
                 </div>
