@@ -84,10 +84,15 @@ export default function TokenDetailPage() {
   const isPageVisibleRef = useRef(true);
   const prevTradeCountRef = useRef(0);
 
-  // Track page visibility
+  // Track page visibility — scroll to top on return if user was near top
   useEffect(() => {
     const handleVisibility = () => {
-      isPageVisibleRef.current = document.visibilityState === "visible";
+      const visible = document.visibilityState === "visible";
+      isPageVisibleRef.current = visible;
+      // When tab becomes visible again and user was at top, snap to top
+      if (visible && isNearTopRef.current) {
+        parentRef.current?.scrollTo({ top: 0 });
+      }
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () =>
@@ -117,15 +122,17 @@ export default function TokenDetailPage() {
       const el = parentRef.current;
       if (el) {
         if (isNearTopRef.current && isPageVisibleRef.current) {
+          // User is at the top and tab is visible — stay at top
           el.scrollTop = 0;
-        } else {
-          // Compensate scroll position so the same content stays in view
+        } else if (!isNearTopRef.current) {
+          // User is scrolled down — offset to keep same content visible
           el.scrollTop += newHashes.length * TRADE_ROW_HEIGHT;
         }
+        // Near top + tab hidden → do nothing, will snap to top on visibility change
       }
 
       // Only show highlight animation when user can see the new trades
-      if (isNearTopRef.current) {
+      if (isNearTopRef.current && isPageVisibleRef.current) {
         setNewTrades((prev) => new Set([...prev, ...newHashes]));
         setTimeout(() => {
           setNewTrades((prev) => {
