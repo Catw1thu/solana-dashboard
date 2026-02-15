@@ -12,7 +12,13 @@ import {
 } from "lucide-react";
 import { formatAddress, formatPrice, formatAmount } from "@/utils/format";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef, useState, useEffect, useCallback } from "react";
+import {
+  useRef,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import clsx from "clsx";
 import { PoolDetail, PoolStats } from "@/types";
 import { API } from "@/config/api";
@@ -99,27 +105,35 @@ export default function TokenDetailPage() {
     return () => el.removeEventListener("scroll", handleScroll);
   }, [parentRef.current]);
 
-  // New trade highlight + auto-scroll
-  useEffect(() => {
+  // Scroll adjustment — useLayoutEffect runs BEFORE browser paint,
+  // so the user never sees the shifted frame (no flash)
+  useLayoutEffect(() => {
     if (trades.length === 0) return;
-    const currentHashes = trades.slice(0, 10).map((t) => t.txHash);
+    const currentHashes = trades.slice(0, 20).map((t) => t.txHash);
     const prevHashes = new Set(prevTradesRef.current);
     const newHashes = currentHashes.filter((h) => !prevHashes.has(h));
 
-    if (newHashes.length > 0) {
-      // Highlight animation
-      setNewTrades((prev) => new Set([...prev, ...newHashes]));
-      setTimeout(() => {
-        setNewTrades((prev) => {
-          const next = new Set(prev);
-          newHashes.forEach((h) => next.delete(h));
-          return next;
-        });
-      }, 1000);
+    if (newHashes.length > 0 && prevTradesRef.current.length > 0) {
+      const el = parentRef.current;
+      if (el) {
+        if (isNearTopRef.current && isPageVisibleRef.current) {
+          el.scrollTop = 0;
+        } else {
+          // Compensate scroll position so the same content stays in view
+          el.scrollTop += newHashes.length * TRADE_ROW_HEIGHT;
+        }
+      }
 
-      // Auto-scroll to top only if user is near top AND page is visible
-      if (isNearTopRef.current && isPageVisibleRef.current) {
-        parentRef.current?.scrollTo({ top: 0 });
+      // Only show highlight animation when user can see the new trades
+      if (isNearTopRef.current) {
+        setNewTrades((prev) => new Set([...prev, ...newHashes]));
+        setTimeout(() => {
+          setNewTrades((prev) => {
+            const next = new Set(prev);
+            newHashes.forEach((h) => next.delete(h));
+            return next;
+          });
+        }, 1000);
       }
     }
     prevTradesRef.current = currentHashes;
