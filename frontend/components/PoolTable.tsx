@@ -4,36 +4,29 @@ import { useState, useEffect, useRef } from "react";
 import { useSocket } from "../context/SocketContext";
 import { useSocketSubscription } from "../hooks/useSocketSubscription";
 import { PoolData } from "../types";
-import { Play } from "lucide-react";
+import { Play, TrendingUp, TrendingDown } from "lucide-react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { API } from "../config/api";
+import { formatPrice } from "../utils/format";
 
-// Row height in pixels - must be consistent for virtualization
 const ROW_HEIGHT = 52;
-// Maximum number of pools to keep in memory
 const MAX_POOLS = 500;
 
 export const PoolTable = () => {
   const { socket } = useSocket();
   const router = useRouter();
   const [pools, setPools] = useState<PoolData[]>([]);
-  // Track newly added pools for highlight animation
   const [newPoolAddresses, setNewPoolAddresses] = useState<Set<string>>(
     new Set(),
   );
-  // Track container height for virtualization
   const [containerHeight, setContainerHeight] = useState(400);
-
-  // Reference to the scrollable container
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Measure container height on mount and resize
   useEffect(() => {
     const updateHeight = () => {
       if (parentRef.current?.parentElement) {
-        // Get the total height available for the PoolTable
         const parent = parentRef.current.parentElement;
         const headerHeight =
           parent
@@ -49,32 +42,22 @@ export const PoolTable = () => {
         setContainerHeight(Math.max(200, availableHeight));
       }
     };
-
     updateHeight();
     window.addEventListener("resize", updateHeight);
-    // Also update after a short delay to ensure layout is complete
     const timer = setTimeout(updateHeight, 100);
-
     return () => {
       window.removeEventListener("resize", updateHeight);
       clearTimeout(timer);
     };
   }, []);
 
-  // 1. Subscribe to Global Room
   useSocketSubscription("room:global");
 
-  // 2. Listen for new pools
   useEffect(() => {
     if (!socket) return;
 
     const handleNewPool = (pool: PoolData) => {
-      console.log("New Pool:", pool);
-
-      // Add to new pools set for highlight
       setNewPoolAddresses((prev) => new Set(prev).add(pool.address));
-
-      // Remove highlight after animation completes
       setTimeout(() => {
         setNewPoolAddresses((prev) => {
           const next = new Set(prev);
@@ -84,20 +67,44 @@ export const PoolTable = () => {
       }, 1000);
 
       setPools((prev) => [pool, ...prev].slice(0, MAX_POOLS));
+
+      // Fetch metadata + stats after delay
+      setTimeout(async () => {
+        try {
+          const res = await fetch(API.pool(pool.address));
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data) {
+            setPools((prev) =>
+              prev.map((p) =>
+                p.address === pool.address
+                  ? {
+                      ...p,
+                      name: data.name,
+                      symbol: data.symbol,
+                      image: data.image,
+                    }
+                  : p,
+              ),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 3000);
     };
 
     socket.on("pool:new", handleNewPool);
-
     return () => {
       socket.off("pool:new", handleNewPool);
     };
   }, [socket]);
 
-  // 3. Fetch initial data from API
+  // Fetch initial data with stats
   useEffect(() => {
     const fetchPools = async () => {
       try {
-        const res = await fetch(`${API.pools}?limit=50`);
+        const res = await fetch(`${API.poolsStats}?limit=50`);
         const data = await res.json();
 
         const mappedPools: PoolData[] = data.map((p: any) => ({
@@ -106,6 +113,15 @@ export const PoolTable = () => {
           solAmount: "0",
           tokenAmount: "0",
           timestamp: new Date(p.createdAt).getTime(),
+          name: p.name || undefined,
+          symbol: p.symbol || undefined,
+          image: p.image || undefined,
+          price: p.price,
+          priceChange5m: p.priceChange5m,
+          volume5m: p.volume5m,
+          txns5m: p.txns5m,
+          buys5m: p.buys5m,
+          sells5m: p.sells5m,
         }));
 
         setPools(mappedPools);
@@ -113,19 +129,35 @@ export const PoolTable = () => {
         console.error("Failed to fetch initial pools:", err);
       }
     };
-
     fetchPools();
   }, []);
 
-  // 4. Setup virtualizer
   const virtualizer = useVirtualizer({
     count: pools.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 5, // Render 5 extra items above/below viewport
+    overscan: 5,
   });
 
   const virtualItems = virtualizer.getVirtualItems();
+
+  const formatAge = (timestamp: number) => {
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  };
+
+  const formatVolume = (vol: number) => {
+    if (vol >= 1000) return `${(vol / 1000).toFixed(1)}K`;
+    if (vol >= 1) return vol.toFixed(1);
+    return vol.toFixed(2);
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-(--border-primary) bg-(--bg-secondary)">
@@ -141,15 +173,17 @@ export const PoolTable = () => {
         <span className="live-dot" />
       </div>
 
-      {/* Table Header (Fixed) */}
-      <div className="table-header grid grid-cols-4 px-6">
-        <div className="px-6 py-3">Pool Address</div>
-        <div className="px-6 py-3">Token Mint</div>
-        <div className="px-6 py-3">Initial SOL</div>
-        <div className="px-6 py-3 text-right">Time</div>
+      {/* Table Header — 6 columns */}
+      <div className="table-header grid grid-cols-[2fr_1.2fr_1fr_1fr_0.8fr_0.6fr] px-4">
+        <div className="px-3 py-3">Token</div>
+        <div className="px-3 py-3">Price</div>
+        <div className="px-3 py-3">5m %</div>
+        <div className="px-3 py-3">Vol (5m)</div>
+        <div className="px-3 py-3">Txns</div>
+        <div className="px-3 py-3 text-right">Age</div>
       </div>
 
-      {/* Virtualized Table Body */}
+      {/* Virtualized Body */}
       <div
         ref={parentRef}
         className="overflow-auto scrollbar-thin"
@@ -170,6 +204,10 @@ export const PoolTable = () => {
             {virtualItems.map((virtualRow) => {
               const pool = pools[virtualRow.index];
               const isNew = newPoolAddresses.has(pool.address);
+              const change = pool.priceChange5m;
+              const isUp = change != null && change > 0;
+              const isDown = change != null && change < 0;
+              const isFlat = change != null && change === 0;
 
               return (
                 <div
@@ -177,7 +215,7 @@ export const PoolTable = () => {
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   className={clsx(
-                    "absolute left-0 top-0 grid grid-cols-4 w-full cursor-pointer border-b border-(--border-primary)/50 text-sm text-(--text-secondary) transition-colors duration-200",
+                    "absolute left-0 top-0 grid grid-cols-[2fr_1.2fr_1fr_1fr_0.8fr_0.6fr] w-full cursor-pointer border-b border-(--border-primary)/50 text-sm text-(--text-secondary) transition-colors duration-200",
                     "hover:bg-(--bg-tertiary)",
                     isNew && "animate-highlight",
                   )}
@@ -187,17 +225,89 @@ export const PoolTable = () => {
                   }}
                   onClick={() => router.push(`/pair/${pool.address}`)}
                 >
-                  <div className="flex items-center px-6 font-mono text-(--accent-blue)">
-                    {pool.address.slice(0, 6)}...{pool.address.slice(-4)}
+                  {/* Token */}
+                  <div className="flex items-center gap-2 px-3">
+                    {pool.image ? (
+                      <img
+                        src={pool.image}
+                        alt={pool.symbol || "token"}
+                        className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-(--border-primary)"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-(--bg-tertiary) shrink-0 ring-1 ring-(--border-primary) flex items-center justify-center text-xs text-(--text-muted) font-bold">
+                        {pool.symbol ? pool.symbol[0] : "?"}
+                      </div>
+                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-semibold text-(--text-primary) truncate text-sm">
+                        {pool.symbol || `${pool.mint.slice(0, 6)}...`}
+                      </span>
+                      {pool.name && (
+                        <span className="text-[11px] text-(--text-muted) truncate leading-tight">
+                          {pool.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center px-6 font-mono text-(--accent-purple)">
-                    {pool.mint.slice(0, 6)}...{pool.mint.slice(-4)}
+
+                  {/* Price */}
+                  <div className="flex items-center px-3 font-mono text-(--text-primary) text-xs">
+                    {pool.price ? formatPrice(pool.price) : "--"}
                   </div>
-                  <div className="flex items-center px-6 font-mono text-(--text-primary)">
-                    {(Number(pool.solAmount) / 1e9).toFixed(2)} SOL
+
+                  {/* 5m Change */}
+                  <div className="flex items-center gap-1 px-3">
+                    {change != null ? (
+                      <>
+                        {isUp && (
+                          <TrendingUp
+                            size={13}
+                            className="text-(--accent-green) shrink-0"
+                          />
+                        )}
+                        {isDown && (
+                          <TrendingDown
+                            size={13}
+                            className="text-(--accent-red) shrink-0"
+                          />
+                        )}
+                        <span
+                          className={clsx(
+                            "font-mono text-xs font-semibold",
+                            isUp
+                              ? "text-(--accent-green)"
+                              : isDown
+                                ? "text-(--accent-red)"
+                                : "text-(--text-muted)",
+                          )}
+                        >
+                          {change >= 0 ? "+" : ""}
+                          {change.toFixed(1)}%
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-(--text-muted) text-xs">--</span>
+                    )}
                   </div>
-                  <div className="flex items-center justify-end px-6 font-mono text-(--text-muted)">
-                    {new Date(pool.timestamp).toLocaleTimeString()}
+
+                  {/* Volume 5m */}
+                  <div className="flex items-center px-3 font-mono text-xs text-(--text-secondary)">
+                    {pool.volume5m != null
+                      ? `${formatVolume(pool.volume5m)} SOL`
+                      : "--"}
+                  </div>
+
+                  {/* Txns 5m */}
+                  <div className="flex items-center px-3 font-mono text-xs text-(--text-secondary)">
+                    {pool.txns5m != null ? pool.txns5m : "--"}
+                  </div>
+
+                  {/* Age */}
+                  <div className="flex items-center justify-end px-3 font-mono text-xs text-(--text-muted)">
+                    {formatAge(pool.timestamp)}
                   </div>
                 </div>
               );
