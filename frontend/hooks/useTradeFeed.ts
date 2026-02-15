@@ -75,7 +75,7 @@ function aggregateTradeToCandles(
   // If bucketTime < lastCandle.time, it's an out-of-order trade (ignore for real-time)
 }
 
-export const useTradeFeed = (poolAddress: string) => {
+export const useTradeFeed = (mint: string) => {
   const { socket } = useSocket();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [candles, setCandles] = useState<CandleData[]>([]);
@@ -85,12 +85,12 @@ export const useTradeFeed = (poolAddress: string) => {
   // Keep a mutable ref for candles to avoid stale closures
   const candlesRef = useRef<CandleData[]>([]);
 
-  // 1. Subscribe to the room
-  useSocketSubscription(poolAddress ? `room:${poolAddress}` : "");
+  // 1. Subscribe to the room (keyed by mint)
+  useSocketSubscription(mint ? `room:${mint}` : "");
 
-  // 2. Load historical candles and trades when address or resolution changes
+  // 2. Load historical candles and trades when mint or resolution changes
   useEffect(() => {
-    if (!poolAddress) return;
+    if (!mint) return;
 
     setIsHistoryLoaded(false);
     candlesRef.current = [];
@@ -99,8 +99,8 @@ export const useTradeFeed = (poolAddress: string) => {
       try {
         // Fetch historical candles and trades in parallel
         const [candlesRes, tradesRes] = await Promise.all([
-          fetch(API.candles(poolAddress, resolution)),
-          fetch(API.trades(poolAddress, 100)),
+          fetch(API.candles(mint, resolution)),
+          fetch(API.trades(mint, 100)),
         ]);
 
         const candlesData = await candlesRes.json();
@@ -134,11 +134,11 @@ export const useTradeFeed = (poolAddress: string) => {
     };
 
     fetchHistory();
-  }, [poolAddress, resolution]);
+  }, [mint, resolution]);
 
   // 3. Listen for batch events and aggregate to candles
   useEffect(() => {
-    if (!socket || !poolAddress) return;
+    if (!socket || !mint) return;
 
     const resolutionMs = RESOLUTION_MS[resolution];
 
@@ -172,7 +172,7 @@ export const useTradeFeed = (poolAddress: string) => {
     return () => {
       socket.off("trade:batch", handleBatch);
     };
-  }, [socket, poolAddress, resolution, isHistoryLoaded]);
+  }, [socket, mint, resolution, isHistoryLoaded]);
 
   return {
     trades,

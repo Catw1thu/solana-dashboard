@@ -5,10 +5,10 @@ import { TokenService } from './token.service';
 export class TokenController {
   constructor(private readonly tokenService: TokenService) {}
 
-  // GET /api/token/pool/:address
-  @Get('pool/:address')
-  async getPool(@Param('address') address: string) {
-    return this.tokenService.getPool(address);
+  // GET /api/token/pool/:mint
+  @Get('pool/:mint')
+  async getPool(@Param('mint') mint: string) {
+    return this.tokenService.getPoolByMint(mint);
   }
 
   // GET /api/token/pools
@@ -29,16 +29,16 @@ export class TokenController {
     return this.tokenService.getPoolsWithStats(limitNum, offsetNum);
   }
 
-  // GET /api/token/stats/:poolAddress
-  @Get('stats/:poolAddress')
-  async getPoolStats(@Param('poolAddress') poolAddress: string) {
-    return this.tokenService.getPoolStats(poolAddress);
+  // GET /api/token/stats/:mint
+  @Get('stats/:mint')
+  async getPoolStats(@Param('mint') mint: string) {
+    return this.tokenService.getPoolStats(mint);
   }
 
-  // GET /api/token/candles/:poolAddress
-  @Get('candles/:poolAddress')
+  // GET /api/token/candles/:mint
+  @Get('candles/:mint')
   async getCandles(
-    @Param('poolAddress') poolAddress: string,
+    @Param('mint') mint: string,
     @Query('resolution') resolution = '1m',
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -56,21 +56,13 @@ export class TokenController {
     const fromDate = from ? new Date(Number(from) * 1000) : undefined;
     const toDate = to ? new Date(Number(to) * 1000) : undefined;
 
-    return this.tokenService.getOHLCV(
-      poolAddress,
-      dbResolution,
-      fromDate,
-      toDate,
-    );
+    return this.tokenService.getOHLCV(mint, dbResolution, fromDate, toDate);
   }
 
-  // GET /api/token/trades/:poolAddress
-  @Get('trades/:poolAddress')
-  async getTrades(
-    @Param('poolAddress') poolAddress: string,
-    @Query('limit') limit?: string,
-  ) {
+  // GET /api/token/trades/:mint
+  @Get('trades/:mint')
+  async getTrades(@Param('mint') mint: string, @Query('limit') limit?: string) {
     const limitNum = limit ? parseInt(limit, 10) : undefined;
-    return this.tokenService.getTrades(poolAddress, limitNum);
+    return this.tokenService.getTrades(mint, limitNum);
   }
 }

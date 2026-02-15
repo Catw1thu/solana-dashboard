@@ -15,11 +15,24 @@ export class TokenService {
   constructor(private db: DatabaseService) {}
 
   /**
-   * 获取单个池子详情
+   * Resolve mint (baseMint) to pool address for internal DB queries
    */
-  async getPool(address: string) {
-    return this.db.pool.findUnique({
-      where: { address },
+  private async resolvePoolAddress(mint: string): Promise<string | null> {
+    const pool = await this.db.pool.findFirst({
+      where: { baseMint: mint },
+      select: { address: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return pool?.address ?? null;
+  }
+
+  /**
+   * 获取单个池子详情 (by mint)
+   */
+  async getPoolByMint(mint: string) {
+    return this.db.pool.findFirst({
+      where: { baseMint: mint },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -101,11 +114,14 @@ export class TokenService {
    * 获取某个池子的 K 线数据 (OHLCV)
    */
   async getOHLCV(
-    poolAddress: string,
+    mint: string,
     resolution: string,
     from?: Date,
     to?: Date,
   ): Promise<Candle[]> {
+    const poolAddress = await this.resolvePoolAddress(mint);
+    if (!poolAddress) return [];
+
     const startTime = from || new Date(Date.now() - 60 * 1000);
     const endTime = to || new Date();
 
@@ -136,7 +152,10 @@ export class TokenService {
   /**
    * 获取池子统计指标 (Volume, Price Change, Trade Count, 分窗口 Buy/Sell)
    */
-  async getPoolStats(poolAddress: string) {
+  async getPoolStats(mint: string) {
+    const poolAddress = await this.resolvePoolAddress(mint);
+    if (!poolAddress) return null;
+
     const now = new Date();
 
     const stats = await this.db.$queryRaw<any[]>`
@@ -225,7 +244,10 @@ export class TokenService {
   /**
    * 获取最近交易记录
    */
-  async getTrades(poolAddress: string, limit = 50) {
+  async getTrades(mint: string, limit = 50) {
+    const poolAddress = await this.resolvePoolAddress(mint);
+    if (!poolAddress) return [];
+
     return this.db.trade.findMany({
       where: { poolAddress },
       orderBy: { time: 'desc' },

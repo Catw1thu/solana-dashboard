@@ -38,15 +38,14 @@ function getSocketUrl(): string {
 export const API_BASE_URL = getApiBaseUrl();
 export const SOCKET_URL = getSocketUrl();
 
-// API endpoints
+// API endpoints — all keyed by mint (baseMint), not pool address
 export const API = {
   pools: `${API_BASE_URL}/api/token/pools`,
   poolsStats: `${API_BASE_URL}/api/token/pools-stats`,
-  pool: (address: string) => `${API_BASE_URL}/api/token/pool/${address}`,
-  stats: (poolAddress: string) =>
-    `${API_BASE_URL}/api/token/stats/${poolAddress}`,
-  candles: (poolAddress: string, resolution: string) =>
-    `${API_BASE_URL}/api/token/candles/${poolAddress}?resolution=${resolution}&from=0`,
-  trades: (poolAddress: string, limit: number = 100) =>
-    `${API_BASE_URL}/api/token/trades/${poolAddress}?limit=${limit}`,
+  pool: (mint: string) => `${API_BASE_URL}/api/token/pool/${mint}`,
+  stats: (mint: string) => `${API_BASE_URL}/api/token/stats/${mint}`,
+  candles: (mint: string, resolution: string) =>
+    `${API_BASE_URL}/api/token/candles/${mint}?resolution=${resolution}&from=0`,
+  trades: (mint: string, limit: number = 100) =>
+    `${API_BASE_URL}/api/token/trades/${mint}?limit=${limit}`,
 };

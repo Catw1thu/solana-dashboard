@@ -368,8 +368,8 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
           });
         }
 
-        // Add to batcher
-        this.batcherService.addTrade(event.pool, {
+        // Add to batcher (keyed by mint, not pool address)
+        this.batcherService.addTrade(event.baseMint, {
           txHash: `https://solscan.io/tx/${event.signature}`,
           type: event.type,
           price,

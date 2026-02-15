@@ -33,13 +33,13 @@ export class BatcherService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Add a trade to the buffer for a specific pool
+   * Add a trade to the buffer for a specific mint
    */
-  addTrade(poolAddress: string, trade: TradeDisplay) {
-    if (!this.tradeBuffer.has(poolAddress)) {
-      this.tradeBuffer.set(poolAddress, []);
+  addTrade(mint: string, trade: TradeDisplay) {
+    if (!this.tradeBuffer.has(mint)) {
+      this.tradeBuffer.set(mint, []);
     }
-    this.tradeBuffer.get(poolAddress)?.push(trade);
+    this.tradeBuffer.get(mint)?.push(trade);
   }
 
   private startBatcher() {
@@ -54,18 +54,15 @@ export class BatcherService implements OnModuleInit, OnModuleDestroy {
   private flush() {
     if (this.tradeBuffer.size === 0) return;
 
-    for (const [poolAddress, trades] of this.tradeBuffer.entries()) {
+    for (const [mint, trades] of this.tradeBuffer.entries()) {
       if (trades.length > 0) {
-        // Emit batch event to the pool's room
-        const room = `room:${poolAddress}`;
+        // Emit batch event to the mint's room
+        const room = `room:${mint}`;
 
-        // Payload minification could happen here if needed,
-        // e.g. mapping objects to arrays to save bandwidth.
-        // For now, sending the full object is safer for MVP.
         this.eventsGateway.emitToRoom(room, 'trade:batch', trades);
 
-        // Clear the buffer for this pool
-        this.tradeBuffer.set(poolAddress, []);
+        // Clear the buffer for this mint
+        this.tradeBuffer.set(mint, []);
       }
     }
   }

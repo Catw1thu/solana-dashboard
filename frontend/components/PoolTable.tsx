@@ -60,11 +60,11 @@ export const PoolTable = () => {
     if (!socket) return;
 
     const handleNewPool = (pool: PoolData) => {
-      setNewPoolAddresses((prev) => new Set(prev).add(pool.address));
+      setNewPoolAddresses((prev) => new Set(prev).add(pool.mint));
       setTimeout(() => {
         setNewPoolAddresses((prev) => {
           const next = new Set(prev);
-          next.delete(pool.address);
+          next.delete(pool.mint);
           return next;
         });
       }, 1000);
@@ -74,13 +74,13 @@ export const PoolTable = () => {
       // Fetch metadata + stats after delay
       setTimeout(async () => {
         try {
-          const res = await fetch(API.pool(pool.address));
+          const res = await fetch(API.pool(pool.mint));
           if (!res.ok) return;
           const data = await res.json();
           if (data) {
             setPools((prev) =>
               prev.map((p) =>
-                p.address === pool.address
+                p.mint === pool.mint
                   ? {
                       ...p,
                       name: data.name,
@@ -153,11 +153,11 @@ export const PoolTable = () => {
         setHasMore(false);
       } else {
         setPools((prev) => {
-          // Deduplicate by address
-          const existing = new Set(prev.map((p) => p.address));
+          // Deduplicate by mint
+          const existing = new Set(prev.map((p) => p.mint));
           const newPools = data
             .map(mapPoolData)
-            .filter((p: PoolData) => !existing.has(p.address));
+            .filter((p: PoolData) => !existing.has(p.mint));
           return [...prev, ...newPools].slice(0, MAX_POOLS);
         });
         setHasMore(data.length >= PAGE_SIZE);
@@ -256,7 +256,7 @@ export const PoolTable = () => {
           >
             {virtualItems.map((virtualRow) => {
               const pool = pools[virtualRow.index];
-              const isNew = newPoolAddresses.has(pool.address);
+              const isNew = newPoolAddresses.has(pool.mint);
               const change = pool.priceChange5m;
               const isUp = change != null && change > 0;
               const isDown = change != null && change < 0;
@@ -264,7 +264,7 @@ export const PoolTable = () => {
 
               return (
                 <div
-                  key={pool.address}
+                  key={pool.mint}
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   className={clsx(
@@ -276,7 +276,7 @@ export const PoolTable = () => {
                     height: `${ROW_HEIGHT}px`,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
-                  onClick={() => router.push(`/pair/${pool.address}`)}
+                  onClick={() => router.push(`/pair/${pool.mint}`)}
                 >
                   {/* Token */}
                   <div className="flex items-center gap-2 px-3">
