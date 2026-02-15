@@ -5,11 +5,30 @@ import { TokenService } from './token.service';
 export class TokenController {
   constructor(private readonly tokenService: TokenService) {}
 
+  // GET /api/token/pool/:address
+  @Get('pool/:address')
+  async getPool(@Param('address') address: string) {
+    return this.tokenService.getPool(address);
+  }
+
   // GET /api/token/pools
   @Get('pools')
   async getPools(@Query('limit') limit?: string) {
     const limitNum = limit ? parseInt(limit, 10) : undefined;
     return this.tokenService.getPools(limitNum);
+  }
+
+  // GET /api/token/pools-stats
+  @Get('pools-stats')
+  async getPoolsWithStats(@Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.tokenService.getPoolsWithStats(limitNum);
+  }
+
+  // GET /api/token/stats/:poolAddress
+  @Get('stats/:poolAddress')
+  async getPoolStats(@Param('poolAddress') poolAddress: string) {
+    return this.tokenService.getPoolStats(poolAddress);
   }
 
   // GET /api/token/candles/:poolAddress
