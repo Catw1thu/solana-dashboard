@@ -73,13 +73,41 @@ export default function TokenDetailPage() {
     setTimeout(() => setCopiedField(null), 2000);
   }, []);
 
-  // New trade highlight
+  // --- Smart auto-scroll ---
+  const isNearTopRef = useRef(true);
+  const isPageVisibleRef = useRef(true);
+  const prevTradeCountRef = useRef(0);
+
+  // Track page visibility
+  useEffect(() => {
+    const handleVisibility = () => {
+      isPageVisibleRef.current = document.visibilityState === "visible";
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
+  // Track scroll position — is user near the top?
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      isNearTopRef.current = el.scrollTop < TRADE_ROW_HEIGHT * 2;
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [parentRef.current]);
+
+  // New trade highlight + auto-scroll
   useEffect(() => {
     if (trades.length === 0) return;
     const currentHashes = trades.slice(0, 10).map((t) => t.txHash);
     const prevHashes = new Set(prevTradesRef.current);
     const newHashes = currentHashes.filter((h) => !prevHashes.has(h));
+
     if (newHashes.length > 0) {
+      // Highlight animation
       setNewTrades((prev) => new Set([...prev, ...newHashes]));
       setTimeout(() => {
         setNewTrades((prev) => {
@@ -88,6 +116,11 @@ export default function TokenDetailPage() {
           return next;
         });
       }, 1000);
+
+      // Auto-scroll to top only if user is near top AND page is visible
+      if (isNearTopRef.current && isPageVisibleRef.current) {
+        parentRef.current?.scrollTo({ top: 0 });
+      }
     }
     prevTradesRef.current = currentHashes;
   }, [trades]);
