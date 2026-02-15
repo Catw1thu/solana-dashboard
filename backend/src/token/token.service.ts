@@ -49,6 +49,27 @@ export class TokenService {
   }
 
   /**
+   * 搜索池子 — 模糊匹配 name, symbol, baseMint
+   */
+  async searchPools(query: string, limit = 10) {
+    const pattern = `%${query}%`;
+    return this.db.$queryRaw<any[]>`
+      SELECT
+        p."baseMint" AS mint,
+        p.name,
+        p.symbol,
+        p.image,
+        (SELECT price FROM "Trade" WHERE "poolAddress" = p.address ORDER BY time DESC LIMIT 1) AS price
+      FROM "Pool" p
+      WHERE p.name ILIKE ${pattern}
+         OR p.symbol ILIKE ${pattern}
+         OR p."baseMint" ILIKE ${pattern}
+      ORDER BY p."createdAt" DESC
+      LIMIT ${limit};
+    `;
+  }
+
+  /**
    * 获取池子列表，附带基础统计指标 (price, price change, volume, txns)
    * 用一条 SQL 完成 JOIN 聚合，避免 N+1 查询
    */

@@ -18,6 +18,13 @@ export class TokenController {
     return this.tokenService.getPools(limitNum);
   }
 
+  // GET /api/token/search?q=...
+  @Get('search')
+  async search(@Query('q') q?: string) {
+    if (!q || q.trim().length === 0) return [];
+    return this.tokenService.searchPools(q.trim());
+  }
+
   // GET /api/token/pools-stats
   @Get('pools-stats')
   async getPoolsWithStats(

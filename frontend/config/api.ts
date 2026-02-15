@@ -44,6 +44,8 @@ export const API = {
   poolsStats: `${API_BASE_URL}/api/token/pools-stats`,
   pool: (mint: string) => `${API_BASE_URL}/api/token/pool/${mint}`,
   stats: (mint: string) => `${API_BASE_URL}/api/token/stats/${mint}`,
+  search: (q: string) =>
+    `${API_BASE_URL}/api/token/search?q=${encodeURIComponent(q)}`,
   candles: (mint: string, resolution: string) =>
     `${API_BASE_URL}/api/token/candles/${mint}?resolution=${resolution}&from=0`,
   trades: (mint: string, limit: number = 100) =>
