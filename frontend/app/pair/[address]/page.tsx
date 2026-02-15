@@ -627,9 +627,17 @@ export default function TokenDetailPage() {
           {/* Addresses */}
           <InfoCard
             label="Pool Address"
-            value={address}
-            href={`https://solscan.io/account/${address}`}
-            onCopy={() => copyToClipboard(address, "pool-info")}
+            value={poolDetail?.address || "--"}
+            href={
+              poolDetail?.address
+                ? `https://solscan.io/account/${poolDetail.address}`
+                : undefined
+            }
+            onCopy={
+              poolDetail?.address
+                ? () => copyToClipboard(poolDetail.address, "pool-info")
+                : undefined
+            }
             copied={copiedField === "pool-info"}
           />
           <InfoCard
