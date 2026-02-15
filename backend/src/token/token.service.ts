@@ -89,8 +89,8 @@ export class TokenService {
       txns5m: r.txns_5m,
       buys5m: r.buys_5m,
       sells5m: r.sells_5m,
-      // Liquidity = quote reserves (SOL) × 2 (standard AMM)
-      liquidity: r.quoteReserves ? r.quoteReserves * 2 : null,
+      // Liquidity = quote reserves (SOL)
+      liquidity: r.quoteReserves ?? null,
       // MCap = price × 1B (PumpFun total supply)
       mcap: r.price ? r.price * 1_000_000_000 : null,
     }));
@@ -216,7 +216,7 @@ export class TokenService {
 
     return {
       ...tradeStats,
-      liquidity: pool?.quoteReserves ? pool.quoteReserves * 2 : null,
+      liquidity: pool?.quoteReserves ?? null,
       mcap: tradeStats.price ? tradeStats.price * 1_000_000_000 : null,
     };
   }
