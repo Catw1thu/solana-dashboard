@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSocket } from "../context/SocketContext";
 import { useSocketSubscription } from "../hooks/useSocketSubscription";
 import { PoolData } from "../types";
@@ -13,6 +13,7 @@ import { formatPrice } from "../utils/format";
 
 const ROW_HEIGHT = 52;
 const MAX_POOLS = 500;
+const PAGE_SIZE = 20;
 
 export const PoolTable = () => {
   const { socket } = useSocket();
@@ -22,6 +23,8 @@ export const PoolTable = () => {
     new Set(),
   );
   const [containerHeight, setContainerHeight] = useState(400);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,39 +103,84 @@ export const PoolTable = () => {
     };
   }, [socket]);
 
+  const mapPoolData = (p: any): PoolData => ({
+    address: p.address,
+    mint: p.baseMint,
+    solAmount: "0",
+    tokenAmount: "0",
+    timestamp: new Date(p.createdAt).getTime(),
+    name: p.name || undefined,
+    symbol: p.symbol || undefined,
+    image: p.image || undefined,
+    price: p.price,
+    priceChange5m: p.priceChange5m,
+    volume5m: p.volume5m,
+    txns5m: p.txns5m,
+    buys5m: p.buys5m,
+    sells5m: p.sells5m,
+    liquidity: p.liquidity,
+    mcap: p.mcap,
+  });
+
   // Fetch initial data with stats
   useEffect(() => {
     const fetchPools = async () => {
       try {
-        const res = await fetch(`${API.poolsStats}?limit=50`);
+        const res = await fetch(
+          `${API.poolsStats}?limit=${PAGE_SIZE}&offset=0`,
+        );
         const data = await res.json();
-
-        const mappedPools: PoolData[] = data.map((p: any) => ({
-          address: p.address,
-          mint: p.baseMint,
-          solAmount: "0",
-          tokenAmount: "0",
-          timestamp: new Date(p.createdAt).getTime(),
-          name: p.name || undefined,
-          symbol: p.symbol || undefined,
-          image: p.image || undefined,
-          price: p.price,
-          priceChange5m: p.priceChange5m,
-          volume5m: p.volume5m,
-          txns5m: p.txns5m,
-          buys5m: p.buys5m,
-          sells5m: p.sells5m,
-          liquidity: p.liquidity,
-          mcap: p.mcap,
-        }));
-
-        setPools(mappedPools);
+        setPools(data.map(mapPoolData));
+        setHasMore(data.length >= PAGE_SIZE);
       } catch (err) {
         console.error("Failed to fetch initial pools:", err);
       }
     };
     fetchPools();
   }, []);
+
+  // Load more pools when scrolling near bottom
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const offset = pools.length;
+      const res = await fetch(
+        `${API.poolsStats}?limit=${PAGE_SIZE}&offset=${offset}`,
+      );
+      const data = await res.json();
+      if (data.length === 0) {
+        setHasMore(false);
+      } else {
+        setPools((prev) => {
+          // Deduplicate by address
+          const existing = new Set(prev.map((p) => p.address));
+          const newPools = data
+            .map(mapPoolData)
+            .filter((p: PoolData) => !existing.has(p.address));
+          return [...prev, ...newPools].slice(0, MAX_POOLS);
+        });
+        setHasMore(data.length >= PAGE_SIZE);
+      }
+    } catch (err) {
+      console.error("Failed to load more pools:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, pools.length]);
+
+  // Detect scroll near bottom — trigger loadMore
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const nearBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < ROW_HEIGHT * 3;
+      if (nearBottom) loadMore();
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [loadMore]);
 
   const virtualizer = useVirtualizer({
     count: pools.length,
@@ -331,6 +379,27 @@ export const PoolTable = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+        {isLoadingMore && (
+          <div className="flex items-center justify-center py-3 text-sm text-(--text-muted)">
+            <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                fill="none"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            Loading more...
           </div>
         )}
       </div>

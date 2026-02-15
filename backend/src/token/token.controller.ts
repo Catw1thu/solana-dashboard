@@ -20,9 +20,13 @@ export class TokenController {
 
   // GET /api/token/pools-stats
   @Get('pools-stats')
-  async getPoolsWithStats(@Query('limit') limit?: string) {
+  async getPoolsWithStats(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const limitNum = limit ? parseInt(limit, 10) : undefined;
-    return this.tokenService.getPoolsWithStats(limitNum);
+    const offsetNum = offset ? parseInt(offset, 10) : undefined;
+    return this.tokenService.getPoolsWithStats(limitNum, offsetNum);
   }
 
   // GET /api/token/stats/:poolAddress

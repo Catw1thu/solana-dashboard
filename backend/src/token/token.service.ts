@@ -39,7 +39,7 @@ export class TokenService {
    * 获取池子列表，附带基础统计指标 (price, price change, volume, txns)
    * 用一条 SQL 完成 JOIN 聚合，避免 N+1 查询
    */
-  async getPoolsWithStats(limit = 20) {
+  async getPoolsWithStats(limit = 20, offset = 0) {
     const now = new Date();
     const t5m = new Date(now.getTime() - 5 * 60 * 1000);
 
@@ -67,7 +67,8 @@ export class TokenService {
         COALESCE((SELECT COUNT(CASE WHEN type = 'SELL' THEN 1 END)::int FROM "Trade" WHERE "poolAddress" = p.address AND time >= ${t5m}), 0) AS sells_5m
       FROM "Pool" p
       ORDER BY p."createdAt" DESC
-      LIMIT ${limit};
+      LIMIT ${limit}
+      OFFSET ${offset};
     `;
 
     return rows.map((r) => ({
