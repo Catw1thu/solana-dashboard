@@ -143,8 +143,9 @@ export const useTradeFeed = (poolAddress: string) => {
     const resolutionMs = RESOLUTION_MS[resolution];
 
     const handleBatch = (batch: Trade[]) => {
-      // Update trades list (newest first)
-      setTrades((prev) => [...batch, ...prev].slice(0, 1000));
+      // Update trades list (newest first — reverse batch since it arrives oldest-first)
+      const reversedBatch = [...batch].reverse();
+      setTrades((prev) => [...reversedBatch, ...prev].slice(0, 1000));
 
       // Only aggregate if history is loaded
       if (!isHistoryLoaded) return;

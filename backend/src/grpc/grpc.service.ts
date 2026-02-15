@@ -275,12 +275,12 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
       // Use the non-blocking queue for metadata
       this.metadataService.queueFetch(migrateEvent.pool, migrateEvent.mint);
 
-      // Emit 'pool:new' event
+      // Emit 'pool:new' event (convert BigInt to string for JSON serialization)
       this.eventsGateway.emitGlobal('pool:new', {
         address: migrateEvent.pool,
         mint: migrateEvent.mint,
-        solAmount: migrateEvent.solAmount,
-        tokenAmount: migrateEvent.tokenAmount,
+        solAmount: migrateEvent.solAmount.toString(),
+        tokenAmount: migrateEvent.tokenAmount.toString(),
         timestamp: migrateEvent.timestamp,
       });
 
