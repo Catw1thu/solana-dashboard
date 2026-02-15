@@ -171,7 +171,7 @@ export class MetadataService implements OnModuleInit, OnModuleDestroy {
   private async fetchOffChainMetadata(uri: string): Promise<string> {
     try {
       // 1. Try direct fetch
-      const { data } = await axios.get(uri, { timeout: 5000 });
+      const { data } = await axios.get(uri, { timeout: 10000 });
       if (data && data.image) {
         return data.image;
       }
@@ -184,6 +184,7 @@ export class MetadataService implements OnModuleInit, OnModuleDestroy {
       const ipfsHash = uri.split('/ipfs/')[1];
       if (ipfsHash) {
         const gateways = [
+          'https://pump.mypinata.cloud/ipfs/',
           'https://ipfs.io/ipfs/',
           'https://gateway.pinata.cloud/ipfs/',
           'https://cloudflare-ipfs.com/ipfs/',
@@ -193,7 +194,7 @@ export class MetadataService implements OnModuleInit, OnModuleDestroy {
             const fallbackUrl = `${gateway}${ipfsHash}`;
             // console.log(`Trying fallback: ${fallbackUrl}`);
             const { data } = await axios.get(fallbackUrl, {
-              timeout: 5000,
+              timeout: 10000,
             });
             if (data && data.image) {
               console.log(`✅ [Metadata] Recovered from ${gateway}`);

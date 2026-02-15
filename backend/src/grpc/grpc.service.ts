@@ -309,7 +309,7 @@ export class GrpcService implements OnModuleInit, OnModuleDestroy {
         //     `  - Time     : ${new Date(event.timestamp).toISOString()}`,
         //   ].join('\n'),
         // );
-        // this.metadataService.queueFetch(event.pool, event.baseMint);
+        this.metadataService.queueFetch(event.pool, event.baseMint);
       }
       if (
         (event.type === 'BUY' || event.type === 'SELL') &&
