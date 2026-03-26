@@ -1,8 +1,7 @@
 mod client;
 mod config;
 mod normalize;
-mod pumpfun_logs;
-mod pumpfun_outer;
+mod pumpfun;
 mod types;
 mod writer;
 
@@ -11,12 +10,12 @@ use client::subscribe_pumpfun;
 use config::load_config;
 use futures::StreamExt;
 use normalize::normalize_tx;
-use pumpfun_logs::extract_trade_event_from_log;
-use pumpfun_outer::parse_pumpfun_outer_instruction;
+use pumpfun::{extract_trade_events_from_logs, parse_outer_instruction};
 use tokio::time::{Duration, Instant};
 use writer::{write_normalized_sample, write_raw_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
 
+#[allow(dead_code)]
 fn print_tx_summary(tx: &SubscribeUpdateTransaction) {
     let Some(info) = &tx.transaction else {
         return;
@@ -48,17 +47,19 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
     };
 
     let signature = bs58::encode(&info.signature).into_string();
-    // write_raw_sample(tx.slot, &signature, tx)?;
+    write_raw_sample(tx.slot, &signature, tx)?;
 
     if let Some(view) = normalize_tx(tx) {
-        // write_normalized_sample(&view)?;
-        let trade_events = extract_trade_event_from_log(&view.log_messages);
+        write_normalized_sample(&view)?;
+
+        let trade_events = extract_trade_events_from_logs(&view.log_messages);
         for event in trade_events {
             println!("Extracted trade event: {:?}", event);
         }
+
         for ix in &view.outer_instructions {
-            if let Some(paresd) = parse_pumpfun_outer_instruction(ix) {
-                println!("Parsed pumpfun instruction: {:?}", paresd);
+            if let Some(parsed) = parse_outer_instruction(ix) {
+                println!("Parsed pumpfun instruction: {:?}", parsed);
             }
         }
     }
@@ -80,7 +81,6 @@ async fn main() -> Result<()> {
             let update = message?;
             match update.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
-                    // print_tx_summary(&tx);
                     persist_transaction_samples(&tx)?;
                 }
                 _ => {}

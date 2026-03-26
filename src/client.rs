@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::{config::Config, pumpfun::PROGRAM_ID};
 use anyhow::Result;
 use futures::{channel::mpsc, Sink, Stream};
 use std::{collections::HashMap, pin::Pin};
@@ -7,9 +7,6 @@ use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterTransactions, SubscribeUpdate,
 };
-
-pub const PUMPFUN_PROGRAM_ID: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
-
 pub type SubscribeSink = Pin<Box<dyn Sink<SubscribeRequest, Error = mpsc::SendError> + Send>>;
 pub type UpdateStream = Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, tonic::Status>> + Send>>;
 
@@ -49,7 +46,7 @@ fn build_subscribe_request() -> SubscribeRequest {
             vote: Some(false),
             failed: Some(false),
             signature: None,
-            account_include: vec![PUMPFUN_PROGRAM_ID.to_string()],
+            account_include: vec![PROGRAM_ID.to_string()],
             account_exclude: vec![],
             account_required: vec![],
         },
