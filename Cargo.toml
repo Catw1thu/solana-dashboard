@@ -1,0 +1,19 @@
+[package]
+name = "solana-dashboard-lab"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.90"
+tokio= { version = "1.42.0", features = ["full", "rt-multi-thread"] }
+futures = "0.3.31"
+yellowstone-grpc-client = {  version = "9.0.0" }
+yellowstone-grpc-proto = {  version = "9.0.0" }
+tonic = { version = "0.14.2", features = ["transport"] }
+rustls = { version = "0.23.23", features = ["ring"], default-features = false }
+dotenvy = "0.15.6"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.134"
+bs58 = "0.5.1"
+base64 = "0.22.1"
+chrono = "0.4.39"
