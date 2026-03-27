@@ -1,4 +1,4 @@
-use crate::types::RawTxView;
+use crate::transaction_view::TransactionView;
 use anyhow::Result;
 use std::{fs, path::PathBuf};
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransaction;
@@ -15,15 +15,15 @@ pub fn write_raw_sample(slot: u64, signature: &str, tx: &SubscribeUpdateTransact
     Ok(())
 }
 
-pub fn write_normalized_sample(view: &RawTxView) -> Result<()> {
-    let dir = sample_dir("normalized");
+pub fn write_transaction_view_sample(view: &TransactionView) -> Result<()> {
+    let dir = sample_dir("views");
     fs::create_dir_all(&dir)?;
 
     let path = dir.join(format!("{}-{}.json", view.slot, view.signature));
     let content = serde_json::to_string_pretty(view)?;
 
     fs::write(&path, content)?;
-    println!("wrote normalized sample -> {}", path.display());
+    println!("wrote transaction view sample -> {}", path.display());
     Ok(())
 }
 

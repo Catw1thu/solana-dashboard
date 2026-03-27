@@ -1,4 +1,4 @@
-use super::{discriminators::TRADE_EVENT_DISC, types::TradeEvent};
+use super::{discriminators::TRADE_EVENT_DISC, model::TradeEvent};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct ByteReader<'a> {
@@ -97,7 +97,7 @@ pub fn parse_trade_event_bytes(data: &[u8]) -> Option<TradeEvent> {
     Some(trade_event)
 }
 
-pub fn extract_trade_events_from_logs(logs: &[String]) -> Vec<TradeEvent> {
+pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
     let mut events = Vec::new();
 
     for log in logs {

@@ -1,9 +1,10 @@
 pub mod constants;
 pub mod discriminators;
-pub mod logs;
-pub mod merge;
-pub mod outer;
-pub mod types;
+pub mod events;
+pub mod instruction;
+pub mod invocation;
+pub mod model;
+pub mod trade;
 
-pub use constants::PROGRAM_ID;
-pub use merge::extract_merged_trades;
+pub use constants::PUMPFUN_PROGRAM_ID;
+pub use trade::extract_trades;

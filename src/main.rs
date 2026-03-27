@@ -1,18 +1,17 @@
 mod client;
 mod config;
-mod normalize;
 mod pumpfun;
-mod types;
+mod transaction_view;
 mod writer;
 
 use anyhow::Result;
 use client::subscribe_pumpfun;
 use config::load_config;
 use futures::StreamExt;
-use normalize::normalize_tx;
-use pumpfun::extract_merged_trades;
+use pumpfun::extract_trades;
 use tokio::time::{Duration, Instant};
-use writer::{write_normalized_sample, write_raw_sample};
+use transaction_view::build_transaction_view;
+use writer::{write_raw_sample, write_transaction_view_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
 
 #[allow(dead_code)]
@@ -49,11 +48,11 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
     let signature = bs58::encode(&info.signature).into_string();
     write_raw_sample(tx.slot, &signature, tx)?;
 
-    if let Some(view) = normalize_tx(tx) {
-        write_normalized_sample(&view)?;
+    if let Some(view) = build_transaction_view(tx) {
+        write_transaction_view_sample(&view)?;
 
-        for trade in extract_merged_trades(&view) {
-            println!("Merged pumpfun trade: {:?}", trade);
+        for trade in extract_trades(&view) {
+            println!("Parsed pumpfun trade: {:?}", trade);
         }
     }
 

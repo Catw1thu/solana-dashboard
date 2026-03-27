@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub enum OuterInstruction {
+pub enum PumpfunInstruction {
     Buy(BuyIx),
     Sell(SellIx),
     BuyExactSolIn(BuyExactSolInIx),
@@ -9,7 +9,7 @@ pub enum OuterInstruction {
     CreateV2,
 }
 
-impl OuterInstruction {
+impl PumpfunInstruction {
     pub fn accounts(&self) -> Option<&TradeAccounts> {
         match self {
             Self::Buy(ix) => Some(&ix.accounts),
@@ -118,8 +118,8 @@ pub struct TradeEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct MergedTrade {
-    pub outer_instruction_index: usize,
+pub struct ParsedTrade {
+    pub source: InvocationSource,
     pub side: TradeSide,
     pub mint: String,
     pub user: String,
@@ -146,6 +146,30 @@ pub struct MergedTrade {
     pub current_sol_volume: u64,
     pub cashback_fee_basis_points: u64,
     pub cashback: u64,
-    pub outer: OuterInstruction,
+    pub instruction: PumpfunInstruction,
     pub event: TradeEvent,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum InvocationSource {
+    Outer {
+        outer_index: usize,
+    },
+    Inner {
+        outer_index: usize,
+        inner_index: usize,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct InstructionInput {
+    pub program_id: String,
+    pub account_pubkeys: Vec<String>,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PumpfunInvocation {
+    pub source: InvocationSource,
+    pub instruction: PumpfunInstruction,
 }

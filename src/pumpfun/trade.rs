@@ -1,48 +1,40 @@
 use super::{
-    logs::extract_trade_events_from_logs,
-    outer::parse_outer_instruction,
-    types::{MergedTrade, OuterInstruction, TradeEvent},
+    events::extract_trade_events,
+    invocation::extract_invocations,
+    model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
 };
-use crate::types::RawTxView;
+use crate::transaction_view::TransactionView;
 
-pub fn extract_merged_trades(view: &RawTxView) -> Vec<MergedTrade> {
-    let mut pending_events = extract_trade_events_from_logs(&view.log_messages);
-    let mut merged_trades = Vec::new();
+pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
+    let mut pending_events = extract_trade_events(&view.log_messages);
+    let invocations = extract_invocations(view);
+    let mut trades = Vec::new();
 
-    for (outer_instruction_index, instruction) in view.outer_instructions.iter().enumerate() {
-        let Some(outer) = parse_outer_instruction(instruction) else {
-            continue;
-        };
-
-        if outer.ix_name().is_none() {
-            continue;
-        }
-
+    for invocation in invocations {
         let Some(event_index) = pending_events
             .iter()
-            .position(|event| event_matches_outer(&outer, event))
+            .position(|event| event_matches_instruction(&invocation.instruction, event))
         else {
             continue;
         };
-
         let event = pending_events.remove(event_index);
-        merged_trades.push(build_merged_trade(outer_instruction_index, outer, event));
+        trades.push(build_trade(invocation, event));
     }
 
-    merged_trades
+    trades
 }
 
-fn event_matches_outer(outer: &OuterInstruction, event: &TradeEvent) -> bool {
-    let Some(expected_ix_name) = outer.ix_name() else {
+fn event_matches_instruction(instruction: &PumpfunInstruction, event: &TradeEvent) -> bool {
+    let Some(expected_ix_name) = instruction.ix_name() else {
         return false;
     };
-    let Some(accounts) = outer.accounts() else {
+    let Some(accounts) = instruction.accounts() else {
         return false;
     };
 
     let expected_is_buy = matches!(
-        outer,
-        OuterInstruction::Buy(_) | OuterInstruction::BuyExactSolIn(_)
+        instruction,
+        PumpfunInstruction::Buy(_) | PumpfunInstruction::BuyExactSolIn(_)
     );
 
     event.ix_name == expected_ix_name
@@ -51,20 +43,18 @@ fn event_matches_outer(outer: &OuterInstruction, event: &TradeEvent) -> bool {
         && event.user == accounts.user
 }
 
-fn build_merged_trade(
-    outer_instruction_index: usize,
-    outer: OuterInstruction,
-    event: TradeEvent,
-) -> MergedTrade {
-    let accounts = outer
+fn build_trade(invocation: PumpfunInvocation, event: TradeEvent) -> ParsedTrade {
+    let accounts = invocation
+        .instruction
         .accounts()
         .expect("trade instructions must always carry trade accounts");
-    let side = outer
+    let side = invocation
+        .instruction
         .side()
         .expect("trade instructions must always map to a side");
 
-    MergedTrade {
-        outer_instruction_index,
+    ParsedTrade {
+        source: invocation.source.clone(),
         side,
         mint: event.mint.clone(),
         user: event.user.clone(),
@@ -91,95 +81,85 @@ fn build_merged_trade(
         current_sol_volume: event.current_sol_volume,
         cashback_fee_basis_points: event.cashback_fee_basis_points,
         cashback: event.cashback,
-        outer,
+        instruction: invocation.instruction.clone(),
         event,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::extract_merged_trades;
-    use crate::types::RawTxView;
+    use super::extract_trades;
+    use crate::transaction_view::TransactionView;
 
-    fn load_fixture(file_name: &str) -> RawTxView {
+    fn load_fixture(file_name: &str) -> TransactionView {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("samples")
-            .join("normalized")
+            .join("views")
             .join(file_name);
         let content = std::fs::read_to_string(path).unwrap();
         serde_json::from_str(&content).unwrap()
     }
 
     #[test]
-    fn pumpfun_direct_buy_merge() {
+    fn pumpfun_direct_buy_trade() {
         let view = load_fixture(
             "408960897-5c6muSpp3Poda2NHHau5AdANHmy9p6sPZJqWCSfZrs3KCU7s1RYcR3rtUkysFopqPxVVMwCqD7kDxtf4N9VyNeqk.json",
         );
-        let trades = extract_merged_trades(&view);
-
-        assert!(!trades.is_empty());
-
+        let trades = extract_trades(&view);
+        assert_eq!(trades.len(), 1);
         let trade = &trades[0];
 
+        assert!(trade.is_buy);
         assert!(trade.sol_amount > 0);
         assert!(trade.token_amount > 0);
         assert_eq!(trade.mint, trade.event.mint);
         assert_eq!(trade.user, trade.event.user);
         assert_eq!(trade.ix_name, trade.event.ix_name);
         assert_eq!(trade.is_buy, trade.event.is_buy);
-        assert_eq!(trades.len(), 1);
-        assert!(trade.is_buy);
     }
 
     #[test]
-    fn pumpfun_direct_sell_merge() {
+    fn pumpfun_direct_sell_trade() {
         let view = load_fixture(
             "408960897-3pJc2Qcj2Zr1xHESpjzfoaRveDRc22czs6yahyaGuYbY4rZUbojHPnPaThAUduxAQNrmoyVGggjdXAR1zGUETihm.json",
         );
-        let trades = extract_merged_trades(&view);
-
-        assert!(!trades.is_empty());
-
+        let trades = extract_trades(&view);
+        assert_eq!(trades.len(), 1);
         let trade = &trades[0];
 
+        assert!(!trade.is_buy);
         assert!(trade.sol_amount > 0);
         assert!(trade.token_amount > 0);
         assert_eq!(trade.mint, trade.event.mint);
         assert_eq!(trade.user, trade.event.user);
         assert_eq!(trade.ix_name, trade.event.ix_name);
         assert_eq!(trade.is_buy, trade.event.is_buy);
-        assert_eq!(trades.len(), 1);
-        assert!(!trade.is_buy);
     }
 
     #[test]
-    fn pumpfun_direct_buy_exact_sol_in_merge() {
+    fn pumpfun_direct_buy_exact_sol_in_trade() {
         let view = load_fixture(
             "408960898-uSsCNYLqCgsvWNdgRaaPBCN8jz47NDA5fwPtXH9MrZYzRMr9JJe4EFaV2onKy4X6hzBEUsjubZ5WEb7gRR7zM7Q.json",
         );
-        let trades = extract_merged_trades(&view);
-
-        assert!(!trades.is_empty());
-
+        let trades = extract_trades(&view);
+        assert_eq!(trades.len(), 1);
         let trade = &trades[0];
 
+        assert!(trade.is_buy);
         assert!(trade.sol_amount > 0);
         assert!(trade.token_amount > 0);
         assert_eq!(trade.mint, trade.event.mint);
         assert_eq!(trade.user, trade.event.user);
         assert_eq!(trade.ix_name, trade.event.ix_name);
         assert_eq!(trade.is_buy, trade.event.is_buy);
-        assert_eq!(trades.len(), 1);
-        assert!(trade.is_buy);
     }
 
     #[test]
-    fn pumpfun_aggregator_wrapped_trade_currently_returns_zero_trades() {
+    fn pumpfun_wrapped_trade() {
         let view = load_fixture(
             "408960896-3NHdGpk2tq6t8pmD6HYZGxKpDbNT5maTrHNpqxwioA1NQoQRRNYC4WLYKemz8t1WRiG9PXfSXrTAMu5kfFbbxtQs.json",
         );
-        let trades = extract_merged_trades(&view);
-
-        assert!(trades.is_empty());
+        let trades = extract_trades(&view);
+        assert!(!trades.is_empty());
     }
 }

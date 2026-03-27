@@ -1,6 +1,6 @@
-use crate::{config::Config, pumpfun::PROGRAM_ID};
+use crate::{config::Config, pumpfun::PUMPFUN_PROGRAM_ID};
 use anyhow::Result;
-use futures::{channel::mpsc, Sink, Stream};
+use futures::{Sink, Stream, channel::mpsc};
 use std::{collections::HashMap, pin::Pin};
 use tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_client::GeyserGrpcClient;
@@ -46,7 +46,7 @@ fn build_subscribe_request() -> SubscribeRequest {
             vote: Some(false),
             failed: Some(false),
             signature: None,
-            account_include: vec![PROGRAM_ID.to_string()],
+            account_include: vec![PUMPFUN_PROGRAM_ID.to_string()],
             account_exclude: vec![],
             account_required: vec![],
         },
