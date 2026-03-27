@@ -10,7 +10,7 @@ use client::subscribe_pumpfun;
 use config::load_config;
 use futures::StreamExt;
 use normalize::normalize_tx;
-use pumpfun::{extract_trade_events_from_logs, parse_outer_instruction};
+use pumpfun::extract_merged_trades;
 use tokio::time::{Duration, Instant};
 use writer::{write_normalized_sample, write_raw_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
@@ -52,15 +52,8 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
     if let Some(view) = normalize_tx(tx) {
         write_normalized_sample(&view)?;
 
-        let trade_events = extract_trade_events_from_logs(&view.log_messages);
-        for event in trade_events {
-            println!("Extracted trade event: {:?}", event);
-        }
-
-        for ix in &view.outer_instructions {
-            if let Some(parsed) = parse_outer_instruction(ix) {
-                println!("Parsed pumpfun instruction: {:?}", parsed);
-            }
+        for trade in extract_merged_trades(&view) {
+            println!("Merged pumpfun trade: {:?}", trade);
         }
     }
 

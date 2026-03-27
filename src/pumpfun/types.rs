@@ -9,6 +9,42 @@ pub enum OuterInstruction {
     CreateV2,
 }
 
+impl OuterInstruction {
+    pub fn accounts(&self) -> Option<&TradeAccounts> {
+        match self {
+            Self::Buy(ix) => Some(&ix.accounts),
+            Self::Sell(ix) => Some(&ix.accounts),
+            Self::BuyExactSolIn(ix) => Some(&ix.accounts),
+            Self::Create | Self::CreateV2 => None,
+        }
+    }
+
+    pub fn ix_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Buy(_) => Some("buy"),
+            Self::Sell(_) => Some("sell"),
+            Self::BuyExactSolIn(_) => Some("buy_exact_sol_in"),
+            Self::Create | Self::CreateV2 => None,
+        }
+    }
+
+    pub fn side(&self) -> Option<TradeSide> {
+        match self {
+            Self::Buy(_) => Some(TradeSide::Buy),
+            Self::Sell(_) => Some(TradeSide::Sell),
+            Self::BuyExactSolIn(_) => Some(TradeSide::BuyExactSolIn),
+            Self::Create | Self::CreateV2 => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum TradeSide {
+    Buy,
+    Sell,
+    BuyExactSolIn,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TradeAccounts {
     pub global: String,
@@ -79,4 +115,37 @@ pub struct TradeEvent {
     pub mayhem_mode: bool,
     pub cashback_fee_basis_points: u64,
     pub cashback: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MergedTrade {
+    pub outer_instruction_index: usize,
+    pub side: TradeSide,
+    pub mint: String,
+    pub user: String,
+    pub bonding_curve: String,
+    pub associated_bonding_curve: String,
+    pub creator_vault: String,
+    pub token_program: String,
+    pub sol_amount: u64,
+    pub token_amount: u64,
+    pub is_buy: bool,
+    pub track_volume: bool,
+    pub timestamp: i64,
+    pub ix_name: String,
+    pub virtual_sol_reserves: u64,
+    pub virtual_token_reserves: u64,
+    pub real_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub fee_recipient: String,
+    pub fee_basis_points: u64,
+    pub fee: u64,
+    pub creator: String,
+    pub creator_fee_basis_points: u64,
+    pub creator_fee: u64,
+    pub current_sol_volume: u64,
+    pub cashback_fee_basis_points: u64,
+    pub cashback: u64,
+    pub outer: OuterInstruction,
+    pub event: TradeEvent,
 }
