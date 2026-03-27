@@ -14,7 +14,12 @@ fn read_u64_le(data: &[u8], offset: usize) -> Option<u64> {
 }
 
 fn read_bool_flag(data: &[u8], offset: usize) -> Option<bool> {
-    Some(*data.get(offset)? != 0)
+    let byte = data.get(offset);
+    match byte {
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
+    }
 }
 
 fn account_at(ix: &InstructionView, index: usize) -> Option<String> {
@@ -75,7 +80,7 @@ pub fn parse_outer_instruction(ix: &InstructionView) -> Option<OuterInstruction>
         BUY_IX_DISC => {
             let amount = read_u64_le(&data, 8)?;
             let max_sol_cost = read_u64_le(&data, 16)?;
-            let track_volume = read_bool_flag(&data, 24)?;
+            let track_volume = read_bool_flag(&data, 24);
             let accounts = parse_buy_accounts(ix)?;
 
             Some(OuterInstruction::Buy(BuyIx {
@@ -99,7 +104,7 @@ pub fn parse_outer_instruction(ix: &InstructionView) -> Option<OuterInstruction>
         BUY_EXACT_SOL_IN_IX_DISC => {
             let spendable_sol_in = read_u64_le(&data, 8)?;
             let min_tokens_out = read_u64_le(&data, 16)?;
-            let track_volume = read_bool_flag(&data, 24)?;
+            let track_volume = read_bool_flag(&data, 24);
             let accounts = parse_buy_accounts(ix)?;
 
             Some(OuterInstruction::BuyExactSolIn(BuyExactSolInIx {

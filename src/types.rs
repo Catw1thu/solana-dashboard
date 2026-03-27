@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RawTxView {
     pub slot: u64,
     pub signature: String,
@@ -17,7 +17,7 @@ pub struct RawTxView {
     pub log_messages: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InstructionView {
     pub program_id_index: u32,
     pub program_id: String,
@@ -30,13 +30,13 @@ pub struct InstructionView {
     pub data_base64: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InnerInstructionGroupView {
     pub outer_instruction_index: u32,
     pub instructions: Vec<InnerInstructionView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InnerInstructionView {
     pub program_id_index: u32,
     pub program_id: String,

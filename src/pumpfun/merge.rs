@@ -95,3 +95,91 @@ fn build_merged_trade(
         event,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::extract_merged_trades;
+    use crate::types::RawTxView;
+
+    fn load_fixture(file_name: &str) -> RawTxView {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("samples")
+            .join("normalized")
+            .join(file_name);
+        let content = std::fs::read_to_string(path).unwrap();
+        serde_json::from_str(&content).unwrap()
+    }
+
+    #[test]
+    fn pumpfun_direct_buy_merge() {
+        let view = load_fixture(
+            "408960897-5c6muSpp3Poda2NHHau5AdANHmy9p6sPZJqWCSfZrs3KCU7s1RYcR3rtUkysFopqPxVVMwCqD7kDxtf4N9VyNeqk.json",
+        );
+        let trades = extract_merged_trades(&view);
+
+        assert!(!trades.is_empty());
+
+        let trade = &trades[0];
+
+        assert!(trade.sol_amount > 0);
+        assert!(trade.token_amount > 0);
+        assert_eq!(trade.mint, trade.event.mint);
+        assert_eq!(trade.user, trade.event.user);
+        assert_eq!(trade.ix_name, trade.event.ix_name);
+        assert_eq!(trade.is_buy, trade.event.is_buy);
+        assert_eq!(trades.len(), 1);
+        assert!(trade.is_buy);
+    }
+
+    #[test]
+    fn pumpfun_direct_sell_merge() {
+        let view = load_fixture(
+            "408960897-3pJc2Qcj2Zr1xHESpjzfoaRveDRc22czs6yahyaGuYbY4rZUbojHPnPaThAUduxAQNrmoyVGggjdXAR1zGUETihm.json",
+        );
+        let trades = extract_merged_trades(&view);
+
+        assert!(!trades.is_empty());
+
+        let trade = &trades[0];
+
+        assert!(trade.sol_amount > 0);
+        assert!(trade.token_amount > 0);
+        assert_eq!(trade.mint, trade.event.mint);
+        assert_eq!(trade.user, trade.event.user);
+        assert_eq!(trade.ix_name, trade.event.ix_name);
+        assert_eq!(trade.is_buy, trade.event.is_buy);
+        assert_eq!(trades.len(), 1);
+        assert!(!trade.is_buy);
+    }
+
+    #[test]
+    fn pumpfun_direct_buy_exact_sol_in_merge() {
+        let view = load_fixture(
+            "408960898-uSsCNYLqCgsvWNdgRaaPBCN8jz47NDA5fwPtXH9MrZYzRMr9JJe4EFaV2onKy4X6hzBEUsjubZ5WEb7gRR7zM7Q.json",
+        );
+        let trades = extract_merged_trades(&view);
+
+        assert!(!trades.is_empty());
+
+        let trade = &trades[0];
+
+        assert!(trade.sol_amount > 0);
+        assert!(trade.token_amount > 0);
+        assert_eq!(trade.mint, trade.event.mint);
+        assert_eq!(trade.user, trade.event.user);
+        assert_eq!(trade.ix_name, trade.event.ix_name);
+        assert_eq!(trade.is_buy, trade.event.is_buy);
+        assert_eq!(trades.len(), 1);
+        assert!(trade.is_buy);
+    }
+
+    #[test]
+    fn pumpfun_aggregator_wrapped_trade_currently_returns_zero_trades() {
+        let view = load_fixture(
+            "408960896-3NHdGpk2tq6t8pmD6HYZGxKpDbNT5maTrHNpqxwioA1NQoQRRNYC4WLYKemz8t1WRiG9PXfSXrTAMu5kfFbbxtQs.json",
+        );
+        let trades = extract_merged_trades(&view);
+
+        assert!(trades.is_empty());
+    }
+}

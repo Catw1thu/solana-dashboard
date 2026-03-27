@@ -69,7 +69,7 @@ pub struct TradeAccounts {
 pub struct BuyIx {
     pub amount: u64,
     pub max_sol_cost: u64,
-    pub track_volume: bool,
+    pub track_volume: Option<bool>,
     pub accounts: TradeAccounts,
 }
 
@@ -84,7 +84,7 @@ pub struct SellIx {
 pub struct BuyExactSolInIx {
     pub spendable_sol_in: u64,
     pub min_tokens_out: u64,
-    pub track_volume: bool,
+    pub track_volume: Option<bool>,
     pub accounts: TradeAccounts,
 }
 
