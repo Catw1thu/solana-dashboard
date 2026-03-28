@@ -1,4 +1,7 @@
-use super::{discriminators::TRADE_EVENT_DISC, model::TradeEvent};
+use super::{
+    discriminators::{CREATE_EVENT_DISC, TRADE_EVENT_DISC},
+    model::{CreateEvent, TradeEvent},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct ByteReader<'a> {
@@ -97,6 +100,38 @@ pub fn parse_trade_event_bytes(data: &[u8]) -> Option<TradeEvent> {
     Some(trade_event)
 }
 
+pub fn parse_create_event_bytes(data: &[u8]) -> Option<CreateEvent> {
+    let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
+    if disc != CREATE_EVENT_DISC {
+        return None;
+    }
+
+    let mut reader = ByteReader::new(data.get(8..)?);
+    let create_event = CreateEvent {
+        name: reader.read_string()?,
+        symbol: reader.read_string()?,
+        uri: reader.read_string()?,
+        mint: reader.read_pubkey()?,
+        bonding_curve: reader.read_pubkey()?,
+        user: reader.read_pubkey()?,
+        creator: reader.read_pubkey()?,
+        timestamp: reader.read_i64_le()?,
+        virtual_token_reserves: reader.read_u64_le()?,
+        virtual_sol_reserves: reader.read_u64_le()?,
+        real_token_reserves: reader.read_u64_le()?,
+        token_total_supply: reader.read_u64_le()?,
+        token_program: reader.read_pubkey()?,
+        is_mayhem_mode: reader.read_bool()?,
+        is_cashback_enabled: reader.read_bool()?,
+    };
+
+    if !reader.is_finished() {
+        return None;
+    }
+
+    Some(create_event)
+}
+
 pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
     let mut events = Vec::new();
 
@@ -110,6 +145,26 @@ pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
         };
 
         if let Some(event) = parse_trade_event_bytes(&bytes) {
+            events.push(event);
+        }
+    }
+
+    events
+}
+
+pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
+    let mut events = Vec::new();
+
+    for log in logs {
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+
+        let Ok(bytes) = STANDARD.decode(encoded) else {
+            continue;
+        };
+
+        if let Some(event) = parse_create_event_bytes(&bytes) {
             events.push(event);
         }
     }

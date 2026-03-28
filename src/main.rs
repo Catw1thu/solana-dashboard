@@ -8,7 +8,7 @@ use anyhow::Result;
 use client::subscribe_pumpfun;
 use config::load_config;
 use futures::StreamExt;
-use pumpfun::extract_trades;
+use pumpfun::{extract_creates, extract_trades};
 use tokio::time::{Duration, Instant};
 use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
@@ -51,6 +51,10 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
     if let Some(view) = build_transaction_view(tx) {
         write_transaction_view_sample(&view)?;
 
+        for create in extract_creates(&view) {
+            println!("Parsed pumpfun create: {:?}", create);
+        }
+
         for trade in extract_trades(&view) {
             println!("Parsed pumpfun trade: {:?}", trade);
         }
@@ -67,8 +71,13 @@ async fn main() -> Result<()> {
         mut stream,
     } = subscribe_pumpfun(&config).await?;
 
+    let listen_seconds = std::env::var("LISTEN_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1);
+
     let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(1) {
+    while started.elapsed() < Duration::from_secs(listen_seconds) {
         if let Some(message) = stream.next().await {
             let update = message?;
             match update.update_oneof {

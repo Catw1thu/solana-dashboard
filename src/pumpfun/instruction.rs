@@ -3,7 +3,10 @@ use super::{
     discriminators::{
         BUY_EXACT_SOL_IN_IX_DISC, BUY_IX_DISC, CREATE_IX_DISC, CREATE_V2_IX_DISC, SELL_IX_DISC,
     },
-    model::{BuyExactSolInIx, BuyIx, InstructionInput, PumpfunInstruction, SellIx, TradeAccounts},
+    model::{
+        BuyExactSolInIx, BuyIx, CreateAccounts, CreateIx, CreateV2Ix, InstructionInput,
+        PumpfunInstruction, SellIx, TradeAccounts,
+    },
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
@@ -18,6 +21,49 @@ fn read_bool_flag(data: &[u8], offset: usize) -> Option<bool> {
         Some(0) => Some(false),
         Some(1) => Some(true),
         _ => None,
+    }
+}
+
+struct ArgReader<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> ArgReader<'a> {
+    fn new(data: &'a [u8], offset: usize) -> Self {
+        Self { data, offset }
+    }
+
+    fn read_bytes(&mut self, len: usize) -> Option<&'a [u8]> {
+        let bytes = self.data.get(self.offset..self.offset + len)?;
+        self.offset += len;
+        Some(bytes)
+    }
+
+    fn read_u32_le(&mut self) -> Option<u32> {
+        let bytes: [u8; 4] = self.read_bytes(4)?.try_into().ok()?;
+        Some(u32::from_le_bytes(bytes))
+    }
+
+    fn read_string(&mut self) -> Option<String> {
+        let len = self.read_u32_le()? as usize;
+        let bytes = self.read_bytes(len)?;
+        std::str::from_utf8(bytes)
+            .ok()
+            .map(|value| value.to_string())
+    }
+
+    fn read_pubkey(&mut self) -> Option<String> {
+        Some(bs58::encode(self.read_bytes(32)?).into_string())
+    }
+
+    fn read_bool(&mut self) -> Option<bool> {
+        let byte = *self.read_bytes(1)?.first()?;
+        match byte {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
     }
 }
 
@@ -67,6 +113,54 @@ fn parse_sell_accounts(input: &InstructionInput) -> Option<TradeAccounts> {
     })
 }
 
+fn parse_create_accounts(input: &InstructionInput) -> Option<CreateAccounts> {
+    Some(CreateAccounts {
+        mint: account_at(input, 0)?,
+        mint_authority: account_at(input, 1)?,
+        bonding_curve: account_at(input, 2)?,
+        associated_bonding_curve: account_at(input, 3)?,
+        global: account_at(input, 4)?,
+        user: account_at(input, 7)?,
+        system_program: account_at(input, 8)?,
+        token_program: account_at(input, 9)?,
+        associated_token_program: account_at(input, 10)?,
+        event_authority: account_at(input, 12)?,
+        program: account_at(input, 13)?,
+        mpl_token_metadata: account_at(input, 5),
+        metadata: account_at(input, 6),
+        rent: account_at(input, 11),
+        mayhem_program_id: None,
+        global_params: None,
+        sol_vault: None,
+        mayhem_state: None,
+        mayhem_token_vault: None,
+    })
+}
+
+fn parse_create_v2_accounts(input: &InstructionInput) -> Option<CreateAccounts> {
+    Some(CreateAccounts {
+        mint: account_at(input, 0)?,
+        mint_authority: account_at(input, 1)?,
+        bonding_curve: account_at(input, 2)?,
+        associated_bonding_curve: account_at(input, 3)?,
+        global: account_at(input, 4)?,
+        user: account_at(input, 5)?,
+        system_program: account_at(input, 6)?,
+        token_program: account_at(input, 7)?,
+        associated_token_program: account_at(input, 8)?,
+        event_authority: account_at(input, 14)?,
+        program: account_at(input, 15)?,
+        mpl_token_metadata: None,
+        metadata: None,
+        rent: None,
+        mayhem_program_id: account_at(input, 9),
+        global_params: account_at(input, 10),
+        sol_vault: account_at(input, 11),
+        mayhem_state: account_at(input, 12),
+        mayhem_token_vault: account_at(input, 13),
+    })
+}
+
 pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction> {
     if input.program_id != PUMPFUN_PROGRAM_ID {
         return None;
@@ -113,8 +207,42 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
                 accounts,
             }))
         }
-        CREATE_IX_DISC => Some(PumpfunInstruction::Create),
-        CREATE_V2_IX_DISC => Some(PumpfunInstruction::CreateV2),
+        CREATE_IX_DISC => {
+            let mut reader = ArgReader::new(&data, 8);
+            let name = reader.read_string()?;
+            let symbol = reader.read_string()?;
+            let uri = reader.read_string()?;
+            let creator = reader.read_pubkey()?;
+            let accounts = parse_create_accounts(input)?;
+
+            Some(PumpfunInstruction::Create(CreateIx {
+                name,
+                symbol,
+                uri,
+                creator,
+                accounts,
+            }))
+        }
+        CREATE_V2_IX_DISC => {
+            let mut reader = ArgReader::new(&data, 8);
+            let name = reader.read_string()?;
+            let symbol = reader.read_string()?;
+            let uri = reader.read_string()?;
+            let creator = reader.read_pubkey()?;
+            let is_mayhem_mode = reader.read_bool()?;
+            let is_cashback_enabled = reader.read_bool();
+            let accounts = parse_create_v2_accounts(input)?;
+
+            Some(PumpfunInstruction::CreateV2(CreateV2Ix {
+                name,
+                symbol,
+                uri,
+                creator,
+                is_mayhem_mode,
+                is_cashback_enabled,
+                accounts,
+            }))
+        }
         _ => None,
     }
 }

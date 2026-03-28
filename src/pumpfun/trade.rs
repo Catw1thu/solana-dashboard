@@ -11,7 +11,10 @@ pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
 
 pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
     let mut pending_events = extract_trade_events(&view.log_messages);
-    let invocations = extract_invocations(view);
+    let invocations = extract_invocations(view)
+        .into_iter()
+        .filter(|invocation| invocation.instruction.is_trade())
+        .collect::<Vec<_>>();
     let mut trades = Vec::new();
     let mut unmatched_invocations = Vec::new();
 
