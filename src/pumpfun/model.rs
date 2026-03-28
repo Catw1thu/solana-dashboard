@@ -7,6 +7,7 @@ pub enum PumpfunInstruction {
     BuyExactSolIn(BuyExactSolInIx),
     Create(CreateIx),
     CreateV2(CreateV2Ix),
+    Migrate(MigrateIx),
 }
 
 impl PumpfunInstruction {
@@ -15,7 +16,7 @@ impl PumpfunInstruction {
             Self::Buy(ix) => Some(&ix.accounts),
             Self::Sell(ix) => Some(&ix.accounts),
             Self::BuyExactSolIn(ix) => Some(&ix.accounts),
-            Self::Create(_) | Self::CreateV2(_) => None,
+            Self::Create(_) | Self::CreateV2(_) | Self::Migrate(_) => None,
         }
     }
 
@@ -23,7 +24,18 @@ impl PumpfunInstruction {
         match self {
             Self::Create(ix) => Some(&ix.accounts),
             Self::CreateV2(ix) => Some(&ix.accounts),
-            Self::Buy(_) | Self::Sell(_) | Self::BuyExactSolIn(_) => None,
+            Self::Buy(_) | Self::Sell(_) | Self::BuyExactSolIn(_) | Self::Migrate(_) => None,
+        }
+    }
+
+    pub fn migrate_accounts(&self) -> Option<&MigrateAccounts> {
+        match self {
+            Self::Migrate(ix) => Some(&ix.accounts),
+            Self::Buy(_)
+            | Self::Sell(_)
+            | Self::BuyExactSolIn(_)
+            | Self::Create(_)
+            | Self::CreateV2(_) => None,
         }
     }
 
@@ -34,6 +46,7 @@ impl PumpfunInstruction {
             Self::BuyExactSolIn(_) => Some("buy_exact_sol_in"),
             Self::Create(_) => Some("create"),
             Self::CreateV2(_) => Some("create_v2"),
+            Self::Migrate(_) => Some("migrate"),
         }
     }
 
@@ -42,7 +55,7 @@ impl PumpfunInstruction {
             Self::Buy(_) => Some(TradeSide::Buy),
             Self::Sell(_) => Some(TradeSide::Sell),
             Self::BuyExactSolIn(_) => Some(TradeSide::BuyExactSolIn),
-            Self::Create(_) | Self::CreateV2(_) => None,
+            Self::Create(_) | Self::CreateV2(_) | Self::Migrate(_) => None,
         }
     }
 
@@ -52,6 +65,10 @@ impl PumpfunInstruction {
 
     pub fn is_create(&self) -> bool {
         matches!(self, Self::Create(_) | Self::CreateV2(_))
+    }
+
+    pub fn is_migrate(&self) -> bool {
+        matches!(self, Self::Migrate(_))
     }
 }
 
@@ -149,6 +166,39 @@ pub struct CreateV2Ix {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MigrateAccounts {
+    pub global: String,
+    pub withdraw_authority: String,
+    pub mint: String,
+    pub bonding_curve: String,
+    pub associated_bonding_curve: String,
+    pub user: String,
+    pub system_program: String,
+    pub token_program: String,
+    pub pump_amm: String,
+    pub pool: String,
+    pub pool_authority: String,
+    pub pool_authority_mint_account: String,
+    pub pool_authority_wsol_account: String,
+    pub amm_global_config: String,
+    pub wsol_mint: String,
+    pub lp_mint: String,
+    pub user_pool_token_account: String,
+    pub pool_base_token_account: String,
+    pub pool_quote_token_account: String,
+    pub token_2022_program: String,
+    pub associated_token_program: String,
+    pub pump_amm_event_authority: String,
+    pub event_authority: String,
+    pub program: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrateIx {
+    pub accounts: MigrateAccounts,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct TradeEvent {
     pub mint: String,
     pub sol_amount: u64,
@@ -194,6 +244,18 @@ pub struct CreateEvent {
     pub token_program: String,
     pub is_mayhem_mode: bool,
     pub is_cashback_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrateEvent {
+    pub user: String,
+    pub mint: String,
+    pub mint_amount: u64,
+    pub sol_amount: u64,
+    pub pool_migration_fee: u64,
+    pub bonding_curve: String,
+    pub timestamp: i64,
+    pub pool: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -252,6 +314,27 @@ pub struct ParsedCreate {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ParsedMigrate {
+    pub source: InvocationSource,
+    pub mint: String,
+    pub user: String,
+    pub bonding_curve: String,
+    pub pool: String,
+    pub mint_amount: u64,
+    pub sol_amount: u64,
+    pub pool_migration_fee: u64,
+    pub timestamp: i64,
+    pub withdraw_authority: String,
+    pub associated_bonding_curve: String,
+    pub token_program: String,
+    pub pump_amm: String,
+    pub pool_authority: String,
+    pub lp_mint: String,
+    pub instruction: PumpfunInstruction,
+    pub event: MigrateEvent,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub enum InvocationSource {
     Outer {
         outer_index: usize,
@@ -287,4 +370,11 @@ pub struct CreateAnalysis {
     pub creates: Vec<ParsedCreate>,
     pub unmatched_invocations: Vec<PumpfunInvocation>,
     pub unmatched_events: Vec<CreateEvent>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrateAnalysis {
+    pub migrations: Vec<ParsedMigrate>,
+    pub unmatched_invocations: Vec<PumpfunInvocation>,
+    pub unmatched_events: Vec<MigrateEvent>,
 }

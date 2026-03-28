@@ -1,6 +1,6 @@
 use super::{
-    discriminators::{CREATE_EVENT_DISC, TRADE_EVENT_DISC},
-    model::{CreateEvent, TradeEvent},
+    discriminators::{CREATE_EVENT_DISC, MIGRATE_EVENT_DISC, TRADE_EVENT_DISC},
+    model::{CreateEvent, MigrateEvent, TradeEvent},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
@@ -132,6 +132,31 @@ pub fn parse_create_event_bytes(data: &[u8]) -> Option<CreateEvent> {
     Some(create_event)
 }
 
+pub fn parse_migrate_event_bytes(data: &[u8]) -> Option<MigrateEvent> {
+    let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
+    if disc != MIGRATE_EVENT_DISC {
+        return None;
+    }
+
+    let mut reader = ByteReader::new(data.get(8..)?);
+    let migrate_event = MigrateEvent {
+        user: reader.read_pubkey()?,
+        mint: reader.read_pubkey()?,
+        mint_amount: reader.read_u64_le()?,
+        sol_amount: reader.read_u64_le()?,
+        pool_migration_fee: reader.read_u64_le()?,
+        bonding_curve: reader.read_pubkey()?,
+        timestamp: reader.read_i64_le()?,
+        pool: reader.read_pubkey()?,
+    };
+
+    if !reader.is_finished() {
+        return None;
+    }
+
+    Some(migrate_event)
+}
+
 pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
     let mut events = Vec::new();
 
@@ -165,6 +190,26 @@ pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
         };
 
         if let Some(event) = parse_create_event_bytes(&bytes) {
+            events.push(event);
+        }
+    }
+
+    events
+}
+
+pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
+    let mut events = Vec::new();
+
+    for log in logs {
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+
+        let Ok(bytes) = STANDARD.decode(encoded) else {
+            continue;
+        };
+
+        if let Some(event) = parse_migrate_event_bytes(&bytes) {
             events.push(event);
         }
     }

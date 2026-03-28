@@ -8,7 +8,7 @@ use anyhow::Result;
 use client::subscribe_pumpfun;
 use config::load_config;
 use futures::StreamExt;
-use pumpfun::{extract_creates, extract_trades};
+use pumpfun::{extract_creates, extract_migrations, extract_trades};
 use tokio::time::{Duration, Instant};
 use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
@@ -53,6 +53,10 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
 
         for create in extract_creates(&view) {
             println!("Parsed pumpfun create: {:?}", create);
+        }
+
+        for migration in extract_migrations(&view) {
+            println!("Parsed pumpfun migrate: {:?}", migration);
         }
 
         for trade in extract_trades(&view) {

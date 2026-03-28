@@ -1,11 +1,12 @@
 use super::{
     constants::PUMPFUN_PROGRAM_ID,
     discriminators::{
-        BUY_EXACT_SOL_IN_IX_DISC, BUY_IX_DISC, CREATE_IX_DISC, CREATE_V2_IX_DISC, SELL_IX_DISC,
+        BUY_EXACT_SOL_IN_IX_DISC, BUY_IX_DISC, CREATE_IX_DISC, CREATE_V2_IX_DISC, MIGRATE_IX_DISC,
+        SELL_IX_DISC,
     },
     model::{
         BuyExactSolInIx, BuyIx, CreateAccounts, CreateIx, CreateV2Ix, InstructionInput,
-        PumpfunInstruction, SellIx, TradeAccounts,
+        MigrateAccounts, MigrateIx, PumpfunInstruction, SellIx, TradeAccounts,
     },
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -161,6 +162,35 @@ fn parse_create_v2_accounts(input: &InstructionInput) -> Option<CreateAccounts> 
     })
 }
 
+fn parse_migrate_accounts(input: &InstructionInput) -> Option<MigrateAccounts> {
+    Some(MigrateAccounts {
+        global: account_at(input, 0)?,
+        withdraw_authority: account_at(input, 1)?,
+        mint: account_at(input, 2)?,
+        bonding_curve: account_at(input, 3)?,
+        associated_bonding_curve: account_at(input, 4)?,
+        user: account_at(input, 5)?,
+        system_program: account_at(input, 6)?,
+        token_program: account_at(input, 7)?,
+        pump_amm: account_at(input, 8)?,
+        pool: account_at(input, 9)?,
+        pool_authority: account_at(input, 10)?,
+        pool_authority_mint_account: account_at(input, 11)?,
+        pool_authority_wsol_account: account_at(input, 12)?,
+        amm_global_config: account_at(input, 13)?,
+        wsol_mint: account_at(input, 14)?,
+        lp_mint: account_at(input, 15)?,
+        user_pool_token_account: account_at(input, 16)?,
+        pool_base_token_account: account_at(input, 17)?,
+        pool_quote_token_account: account_at(input, 18)?,
+        token_2022_program: account_at(input, 19)?,
+        associated_token_program: account_at(input, 20)?,
+        pump_amm_event_authority: account_at(input, 21)?,
+        event_authority: account_at(input, 22)?,
+        program: account_at(input, 23)?,
+    })
+}
+
 pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction> {
     if input.program_id != PUMPFUN_PROGRAM_ID {
         return None;
@@ -242,6 +272,10 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
                 is_cashback_enabled,
                 accounts,
             }))
+        }
+        MIGRATE_IX_DISC => {
+            let accounts = parse_migrate_accounts(input)?;
+            Some(PumpfunInstruction::Migrate(MigrateIx { accounts }))
         }
         _ => None,
     }

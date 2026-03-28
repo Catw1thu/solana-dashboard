@@ -69,7 +69,8 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &CreateEve
         }
         PumpfunInstruction::Buy(_)
         | PumpfunInstruction::Sell(_)
-        | PumpfunInstruction::BuyExactSolIn(_) => false,
+        | PumpfunInstruction::BuyExactSolIn(_)
+        | PumpfunInstruction::Migrate(_) => false,
     }
 }
 
