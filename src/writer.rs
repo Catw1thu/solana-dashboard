@@ -30,5 +30,6 @@ pub fn write_transaction_view_sample(view: &TransactionView) -> Result<()> {
 fn sample_dir(kind: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("samples")
+        .join("captured")
         .join(kind)
 }

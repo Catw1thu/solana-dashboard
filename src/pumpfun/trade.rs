@@ -113,6 +113,7 @@ mod tests {
     fn load_fixture(file_name: &str) -> TransactionView {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("samples")
+            .join("tests")
             .join("views")
             .join(file_name);
         let content = std::fs::read_to_string(path).unwrap();
