@@ -173,3 +173,10 @@ pub struct PumpfunInvocation {
     pub source: InvocationSource,
     pub instruction: PumpfunInstruction,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TradeAnalysis {
+    pub trades: Vec<ParsedTrade>,
+    pub unmatched_invocations: Vec<PumpfunInvocation>,
+    pub unmatched_events: Vec<TradeEvent>,
+}

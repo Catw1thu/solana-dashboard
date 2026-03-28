@@ -3,25 +3,35 @@ use super::{
     invocation::extract_invocations,
     model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
 };
-use crate::transaction_view::TransactionView;
+use crate::{pumpfun::model::TradeAnalysis, transaction_view::TransactionView};
 
 pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
+    analyze_trades(view).trades
+}
+
+pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
     let mut pending_events = extract_trade_events(&view.log_messages);
     let invocations = extract_invocations(view);
     let mut trades = Vec::new();
+    let mut unmatched_invocations = Vec::new();
 
     for invocation in invocations {
         let Some(event_index) = pending_events
             .iter()
             .position(|event| event_matches_instruction(&invocation.instruction, event))
         else {
+            unmatched_invocations.push(invocation);
             continue;
         };
         let event = pending_events.remove(event_index);
         trades.push(build_trade(invocation, event));
     }
 
-    trades
+    TradeAnalysis {
+        trades,
+        unmatched_invocations,
+        unmatched_events: pending_events,
+    }
 }
 
 fn event_matches_instruction(instruction: &PumpfunInstruction, event: &TradeEvent) -> bool {
@@ -89,7 +99,13 @@ fn build_trade(invocation: PumpfunInvocation, event: TradeEvent) -> ParsedTrade 
 #[cfg(test)]
 mod tests {
     use super::extract_trades;
-    use crate::transaction_view::TransactionView;
+    use crate::{
+        pumpfun::{
+            PUMPFUN_PROGRAM_ID,
+            model::{InvocationSource, PumpfunInstruction, TradeSide},
+        },
+        transaction_view::TransactionView,
+    };
 
     fn load_fixture(file_name: &str) -> TransactionView {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -155,11 +171,52 @@ mod tests {
     }
 
     #[test]
-    fn pumpfun_wrapped_trade() {
+    fn pumpfun_wrapped_buy_trade_from_inner() {
         let view = load_fixture(
             "408960896-3NHdGpk2tq6t8pmD6HYZGxKpDbNT5maTrHNpqxwioA1NQoQRRNYC4WLYKemz8t1WRiG9PXfSXrTAMu5kfFbbxtQs.json",
         );
+
+        assert!(
+            view.outer_instructions
+                .iter()
+                .all(|ix| ix.program_id != PUMPFUN_PROGRAM_ID)
+        );
+
         let trades = extract_trades(&view);
-        assert!(!trades.is_empty());
+
+        assert_eq!(trades.len(), 1);
+        let trade = &trades[0];
+
+        assert!(matches!(
+            trade.source,
+            InvocationSource::Inner {
+                outer_index: 1,
+                inner_index: 2
+            }
+        ));
+        assert!(matches!(trade.instruction, PumpfunInstruction::Buy(_)));
+        assert!(matches!(trade.side, TradeSide::Buy));
+        assert_eq!(trade.ix_name, "buy");
+        assert!(trade.is_buy);
+        assert_eq!(trade.mint, "FRSrEK3nr9gQ2gir6pkrFUS4n7vaDJhjyCMcQbQFpump");
+        assert_eq!(trade.user, "8gCJYyKWnKGoY6Di3iF1iUErfXHpQyiaGLB1TyRYbhcF");
+        assert_eq!(
+            trade.bonding_curve,
+            "EyVx2fzEjdoZe7ZmRswAkpEjio4NmSMysuGkE4ks63sf"
+        );
+        assert_eq!(
+            trade.creator_vault,
+            "96bWWuSF6de5H3wFAMb2gQ2sV2NLuwFJpB4WZ7BZnFJD"
+        );
+        assert_eq!(
+            trade.token_program,
+            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        );
+        assert_eq!(trade.mint, trade.event.mint);
+        assert_eq!(trade.user, trade.event.user);
+        assert_eq!(trade.ix_name, trade.event.ix_name);
+        assert_eq!(trade.is_buy, trade.event.is_buy);
+        assert!(trade.sol_amount > 0);
+        assert!(trade.token_amount > 0);
     }
 }
