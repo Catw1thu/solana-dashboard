@@ -98,7 +98,7 @@ fn build_trade(invocation: PumpfunInvocation, event: TradeEvent) -> ParsedTrade 
 
 #[cfg(test)]
 mod tests {
-    use super::extract_trades;
+    use super::{analyze_trades, extract_trades};
     use crate::{
         pumpfun::{
             PUMPFUN_PROGRAM_ID,
@@ -218,5 +218,51 @@ mod tests {
         assert_eq!(trade.is_buy, trade.event.is_buy);
         assert!(trade.sol_amount > 0);
         assert!(trade.token_amount > 0);
+    }
+
+    #[test]
+    fn pumpfun_multi_trade_sell_many_analysis() {
+        let view = load_fixture(
+            "409396076-2neiyZdnVzZLxwzPLLbsWt41qjjZEBMK6GSAK9BwmFBc31nKY4i7M1e46UzPHz8yK46Hq7CTzzoN5hCuAKrdTGTV.json",
+        );
+
+        let analysis = analyze_trades(&view);
+
+        assert_eq!(analysis.trades.len(), 2);
+        assert!(analysis.unmatched_invocations.is_empty());
+        assert!(analysis.unmatched_events.is_empty());
+
+        let first = &analysis.trades[0];
+        let second = &analysis.trades[1];
+
+        assert!(matches!(
+            first.source,
+            InvocationSource::Inner {
+                outer_index: 2,
+                inner_index: 0
+            }
+        ));
+        assert!(matches!(
+            second.source,
+            InvocationSource::Inner {
+                outer_index: 2,
+                inner_index: 7
+            }
+        ));
+        assert!(matches!(first.instruction, PumpfunInstruction::Sell(_)));
+        assert!(matches!(second.instruction, PumpfunInstruction::Sell(_)));
+        assert!(matches!(first.side, TradeSide::Sell));
+        assert!(matches!(second.side, TradeSide::Sell));
+        assert_eq!(first.ix_name, "sell");
+        assert_eq!(second.ix_name, "sell");
+        assert_eq!(first.mint, "BAqcCCgMNLwpiNcMq3PHaWF4uDWtpz1ekFuzYCqjpump");
+        assert_eq!(second.mint, "BAqcCCgMNLwpiNcMq3PHaWF4uDWtpz1ekFuzYCqjpump");
+        assert_ne!(first.user, second.user);
+        assert_eq!(first.user, "71WXxTi8LDj95a3pDbHHwxj7UCNBXcufvLQec9956J5x");
+        assert_eq!(second.user, "3VvoMU8jCM3iqqNsZNYP9GtC8FmeW2mKT4hyo4CZ29bx");
+        assert!(first.sol_amount > 0);
+        assert!(second.sol_amount > 0);
+        assert!(first.token_amount > 0);
+        assert!(second.token_amount > 0);
     }
 }
