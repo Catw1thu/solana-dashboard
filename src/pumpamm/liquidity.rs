@@ -1,0 +1,421 @@
+use super::{
+    events::{extract_create_pool_events, extract_liquidity_events},
+    invocation::extract_invocations,
+    model::{
+        CreatePoolEvent, LiquidityAnalysis, LiquidityEvent, ParsedLiquidityAction,
+        ParsedPoolCreation, PoolCreationAnalysis, PumpAmmInstruction, PumpAmmInvocation,
+    },
+};
+use crate::transaction_view::TransactionView;
+
+pub fn extract_pool_creations(view: &TransactionView) -> Vec<ParsedPoolCreation> {
+    analyze_pool_creations(view).pool_creations
+}
+
+pub fn analyze_pool_creations(view: &TransactionView) -> PoolCreationAnalysis {
+    let mut pending_events = extract_create_pool_events(&view.log_messages);
+    let invocations = extract_invocations(view)
+        .into_iter()
+        .filter(|invocation| invocation.instruction.is_create_pool())
+        .collect::<Vec<_>>();
+
+    let mut pool_creations = Vec::new();
+    let mut unmatched_invocations = Vec::new();
+
+    for invocation in invocations {
+        let Some(event_index) = pending_events
+            .iter()
+            .position(|event| event_matches_create_pool(&invocation.instruction, event))
+        else {
+            unmatched_invocations.push(invocation);
+            continue;
+        };
+
+        let event = pending_events.remove(event_index);
+        pool_creations.push(build_pool_creation(invocation, event));
+    }
+
+    PoolCreationAnalysis {
+        pool_creations,
+        unmatched_invocations,
+        unmatched_events: pending_events,
+    }
+}
+
+pub fn extract_liquidity_actions(view: &TransactionView) -> Vec<ParsedLiquidityAction> {
+    analyze_liquidity_actions(view).actions
+}
+
+pub fn analyze_liquidity_actions(view: &TransactionView) -> LiquidityAnalysis {
+    let mut pending_events = extract_liquidity_events(&view.log_messages);
+    let invocations = extract_invocations(view)
+        .into_iter()
+        .filter(|invocation| invocation.instruction.is_liquidity())
+        .collect::<Vec<_>>();
+
+    let mut actions = Vec::new();
+    let mut unmatched_invocations = Vec::new();
+
+    for invocation in invocations {
+        let Some(event_index) = pending_events
+            .iter()
+            .position(|event| event_matches_liquidity(&invocation.instruction, event))
+        else {
+            unmatched_invocations.push(invocation);
+            continue;
+        };
+
+        let event = pending_events.remove(event_index);
+        actions.push(build_liquidity_action(invocation, event));
+    }
+
+    LiquidityAnalysis {
+        actions,
+        unmatched_invocations,
+        unmatched_events: pending_events,
+    }
+}
+
+fn event_matches_create_pool(instruction: &PumpAmmInstruction, event: &CreatePoolEvent) -> bool {
+    let Some(accounts) = instruction.create_pool_accounts() else {
+        return false;
+    };
+
+    match instruction {
+        PumpAmmInstruction::CreatePool(ix) => {
+            event.pool == accounts.pool
+                && event.creator == accounts.creator
+                && event.base_mint == accounts.base_mint
+                && event.quote_mint == accounts.quote_mint
+                && event.base_amount_in == ix.base_amount_in
+                && event.quote_amount_in == ix.quote_amount_in
+                && event.coin_creator == ix.coin_creator
+                && event.is_mayhem_mode == ix.is_mayhem_mode
+        }
+        _ => false,
+    }
+}
+
+fn event_matches_liquidity(instruction: &PumpAmmInstruction, event: &LiquidityEvent) -> bool {
+    let Some(accounts) = instruction.liquidity_accounts() else {
+        return false;
+    };
+
+    match (instruction, event) {
+        (PumpAmmInstruction::Deposit(ix), LiquidityEvent::Deposit(event)) => {
+            event.pool == accounts.pool
+                && event.user == accounts.user
+                && event.lp_token_amount_out == ix.lp_token_amount_out
+                && event.max_base_amount_in == ix.max_base_amount_in
+                && event.max_quote_amount_in == ix.max_quote_amount_in
+        }
+        (PumpAmmInstruction::Withdraw(ix), LiquidityEvent::Withdraw(event)) => {
+            event.pool == accounts.pool
+                && event.user == accounts.user
+                && event.lp_token_amount_in == ix.lp_token_amount_in
+                && event.min_base_amount_out == ix.min_base_amount_out
+                && event.min_quote_amount_out == ix.min_quote_amount_out
+        }
+        _ => false,
+    }
+}
+
+fn build_pool_creation(
+    invocation: PumpAmmInvocation,
+    event: CreatePoolEvent,
+) -> ParsedPoolCreation {
+    ParsedPoolCreation {
+        source: invocation.source.clone(),
+        pool: event.pool.clone(),
+        creator: event.creator.clone(),
+        base_mint: event.base_mint.clone(),
+        quote_mint: event.quote_mint.clone(),
+        lp_mint: event.lp_mint.clone(),
+        base_amount_in: event.base_amount_in,
+        quote_amount_in: event.quote_amount_in,
+        initial_liquidity: event.initial_liquidity,
+        coin_creator: event.coin_creator.clone(),
+        is_mayhem_mode: event.is_mayhem_mode,
+        instruction: invocation.instruction.clone(),
+        event,
+    }
+}
+
+fn build_liquidity_action(
+    invocation: PumpAmmInvocation,
+    event: LiquidityEvent,
+) -> ParsedLiquidityAction {
+    let accounts = invocation
+        .instruction
+        .liquidity_accounts()
+        .expect("liquidity instructions must carry liquidity accounts");
+    let action = invocation
+        .instruction
+        .liquidity_action()
+        .expect("liquidity instructions must map to an action");
+
+    let (pool, user, timestamp) = match &event {
+        LiquidityEvent::Deposit(event) => (&event.pool, &event.user, event.timestamp),
+        LiquidityEvent::Withdraw(event) => (&event.pool, &event.user, event.timestamp),
+    };
+
+    ParsedLiquidityAction {
+        source: invocation.source.clone(),
+        action,
+        pool: pool.clone(),
+        user: user.clone(),
+        base_mint: accounts.base_mint.clone(),
+        quote_mint: accounts.quote_mint.clone(),
+        lp_mint: accounts.lp_mint.clone(),
+        timestamp,
+        instruction: invocation.instruction.clone(),
+        event,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_liquidity_actions, extract_pool_creations};
+    use crate::pumpamm::{
+        constants::PUMP_AMM_PROGRAM_ID,
+        discriminators::{
+            CREATE_POOL_EVENT_DISC, CREATE_POOL_IX_DISC, DEPOSIT_EVENT_DISC, DEPOSIT_IX_DISC,
+            WITHDRAW_EVENT_DISC, WITHDRAW_IX_DISC,
+        },
+        model::{InvocationSource, LiquidityAction, LiquidityEvent, PumpAmmInstruction},
+    };
+    use crate::transaction_view::{OuterInstructionView, TransactionView};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    #[test]
+    fn pumpamm_create_pool_merges_successfully() {
+        let accounts = fake_accounts(18);
+        let view = TransactionView {
+            slot: 0,
+            signature: "sig".to_string(),
+            tx_index: 0,
+            is_vote: false,
+            account_keys: vec![],
+            loaded_writable_addresses: vec![],
+            loaded_readonly_addresses: vec![],
+            all_accounts: accounts.clone(),
+            outer_instructions: vec![create_pool_outer_ix(accounts.clone())],
+            inner_instruction_groups: vec![],
+            log_messages: vec![format!(
+                "Program data: {}",
+                STANDARD.encode(create_pool_event_bytes())
+            )],
+        };
+
+        let creations = extract_pool_creations(&view);
+        assert_eq!(creations.len(), 1);
+        let creation = &creations[0];
+
+        assert!(matches!(
+            creation.source,
+            InvocationSource::Outer { outer_index: 0 }
+        ));
+        assert!(matches!(
+            creation.instruction,
+            PumpAmmInstruction::CreatePool(_)
+        ));
+        assert_eq!(creation.pool, accounts[0]);
+        assert_eq!(creation.creator, accounts[2]);
+        assert_eq!(creation.base_mint, accounts[3]);
+        assert_eq!(creation.quote_mint, accounts[4]);
+        assert_eq!(creation.lp_mint, accounts[5]);
+        assert_eq!(creation.base_amount_in, 100);
+        assert_eq!(creation.quote_amount_in, 200);
+    }
+
+    #[test]
+    fn pumpamm_liquidity_actions_merge_successfully() {
+        let deposit_accounts = fake_accounts(15);
+        let withdraw_accounts = fake_accounts_with_offset(15, 20);
+        let view = TransactionView {
+            slot: 0,
+            signature: "sig".to_string(),
+            tx_index: 0,
+            is_vote: false,
+            account_keys: vec![],
+            loaded_writable_addresses: vec![],
+            loaded_readonly_addresses: vec![],
+            all_accounts: deposit_accounts.clone(),
+            outer_instructions: vec![
+                deposit_outer_ix(deposit_accounts.clone()),
+                withdraw_outer_ix(withdraw_accounts.clone()),
+            ],
+            inner_instruction_groups: vec![],
+            log_messages: vec![
+                format!("Program data: {}", STANDARD.encode(deposit_event_bytes())),
+                format!("Program data: {}", STANDARD.encode(withdraw_event_bytes())),
+            ],
+        };
+
+        let actions = extract_liquidity_actions(&view);
+        assert_eq!(actions.len(), 2);
+
+        assert!(matches!(
+            actions[0].source,
+            InvocationSource::Outer { outer_index: 0 }
+        ));
+        assert!(matches!(actions[0].action, LiquidityAction::Deposit));
+        assert!(matches!(actions[0].instruction, PumpAmmInstruction::Deposit(_)));
+        match &actions[0].event {
+            LiquidityEvent::Deposit(event) => {
+                assert_eq!(event.pool, deposit_accounts[0]);
+                assert_eq!(event.user, deposit_accounts[2]);
+            }
+            LiquidityEvent::Withdraw(_) => panic!("expected deposit"),
+        }
+
+        assert!(matches!(
+            actions[1].source,
+            InvocationSource::Outer { outer_index: 1 }
+        ));
+        assert!(matches!(actions[1].action, LiquidityAction::Withdraw));
+        assert!(matches!(
+            actions[1].instruction,
+            PumpAmmInstruction::Withdraw(_)
+        ));
+        match &actions[1].event {
+            LiquidityEvent::Withdraw(event) => {
+                assert_eq!(event.pool, withdraw_accounts[0]);
+                assert_eq!(event.user, withdraw_accounts[2]);
+            }
+            LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
+        }
+    }
+
+    fn create_pool_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
+        let mut data = Vec::from(CREATE_POOL_IX_DISC);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&100u64.to_le_bytes());
+        data.extend_from_slice(&200u64.to_le_bytes());
+        data.extend_from_slice(&[19u8; 32]);
+        data.push(1);
+        data.push(0);
+
+        OuterInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: (0..18).collect(),
+            account_pubkeys: accounts,
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+        }
+    }
+
+    fn deposit_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
+        let mut data = Vec::from(DEPOSIT_IX_DISC);
+        data.extend_from_slice(&10u64.to_le_bytes());
+        data.extend_from_slice(&100u64.to_le_bytes());
+        data.extend_from_slice(&200u64.to_le_bytes());
+
+        OuterInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: (0..15).collect(),
+            account_pubkeys: accounts,
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+        }
+    }
+
+    fn withdraw_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
+        let mut data = Vec::from(WITHDRAW_IX_DISC);
+        data.extend_from_slice(&11u64.to_le_bytes());
+        data.extend_from_slice(&101u64.to_le_bytes());
+        data.extend_from_slice(&201u64.to_le_bytes());
+
+        OuterInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: (0..15).collect(),
+            account_pubkeys: accounts,
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+        }
+    }
+
+    fn fake_accounts(count: usize) -> Vec<String> {
+        fake_accounts_with_offset(count, 0)
+    }
+
+    fn fake_accounts_with_offset(count: usize, offset: u8) -> Vec<String> {
+        (1..=count)
+            .map(|seed| bs58::encode([seed as u8 + offset; 32]).into_string())
+            .collect()
+    }
+
+    fn create_pool_event_bytes() -> Vec<u8> {
+        let mut data = Vec::from(CREATE_POOL_EVENT_DISC);
+        data.extend_from_slice(&1_777_777_777i64.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&[3u8; 32]); // creator accounts[2]
+        data.extend_from_slice(&[4u8; 32]); // base_mint
+        data.extend_from_slice(&[5u8; 32]); // quote_mint
+        data.push(6);
+        data.push(9);
+        data.extend_from_slice(&100u64.to_le_bytes());
+        data.extend_from_slice(&200u64.to_le_bytes());
+        data.extend_from_slice(&100u64.to_le_bytes());
+        data.extend_from_slice(&200u64.to_le_bytes());
+        data.extend_from_slice(&1u64.to_le_bytes());
+        data.extend_from_slice(&50u64.to_le_bytes());
+        data.extend_from_slice(&10u64.to_le_bytes());
+        data.push(255);
+        data.extend_from_slice(&[1u8; 32]); // pool accounts[0]
+        data.extend_from_slice(&[6u8; 32]); // lp mint accounts[5]
+        data.extend_from_slice(&[7u8; 32]);
+        data.extend_from_slice(&[8u8; 32]);
+        data.extend_from_slice(&[19u8; 32]); // coin_creator
+        data.push(1);
+        data
+    }
+
+    fn deposit_event_bytes() -> Vec<u8> {
+        let mut data = Vec::from(DEPOSIT_EVENT_DISC);
+        data.extend_from_slice(&1_777_777_777i64.to_le_bytes());
+        data.extend_from_slice(&10u64.to_le_bytes());
+        data.extend_from_slice(&100u64.to_le_bytes());
+        data.extend_from_slice(&200u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&90u64.to_le_bytes());
+        data.extend_from_slice(&180u64.to_le_bytes());
+        data.extend_from_slice(&1_000u64.to_le_bytes());
+        data.extend_from_slice(&[1u8; 32]); // pool
+        data.extend_from_slice(&[3u8; 32]); // user
+        data.extend_from_slice(&[7u8; 32]);
+        data.extend_from_slice(&[8u8; 32]);
+        data.extend_from_slice(&[9u8; 32]);
+        data
+    }
+
+    fn withdraw_event_bytes() -> Vec<u8> {
+        let mut data = Vec::from(WITHDRAW_EVENT_DISC);
+        data.extend_from_slice(&1_777_777_778i64.to_le_bytes());
+        data.extend_from_slice(&11u64.to_le_bytes());
+        data.extend_from_slice(&101u64.to_le_bytes());
+        data.extend_from_slice(&201u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&91u64.to_le_bytes());
+        data.extend_from_slice(&181u64.to_le_bytes());
+        data.extend_from_slice(&1_001u64.to_le_bytes());
+        data.extend_from_slice(&[21u8; 32]); // pool
+        data.extend_from_slice(&[23u8; 32]); // user
+        data.extend_from_slice(&[27u8; 32]);
+        data.extend_from_slice(&[28u8; 32]);
+        data.extend_from_slice(&[29u8; 32]);
+        data
+    }
+}

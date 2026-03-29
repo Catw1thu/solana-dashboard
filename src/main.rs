@@ -1,13 +1,15 @@
 mod client;
 mod config;
+mod pumpamm;
 mod pumpfun;
 mod transaction_view;
 mod writer;
 
 use anyhow::Result;
-use client::subscribe_pumpfun;
+use client::subscribe_pump_ecosystem;
 use config::load_config;
 use futures::StreamExt;
+use pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps};
 use pumpfun::{extract_creates, extract_migrations, extract_trades};
 use tokio::time::{Duration, Instant};
 use transaction_view::build_transaction_view;
@@ -62,6 +64,18 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
         for trade in extract_trades(&view) {
             println!("Parsed pumpfun trade: {:?}", trade);
         }
+
+        for creation in extract_pool_creations(&view) {
+            println!("Parsed pump_amm create_pool: {:?}", creation);
+        }
+
+        for action in extract_liquidity_actions(&view) {
+            println!("Parsed pump_amm liquidity: {:?}", action);
+        }
+
+        for swap in extract_swaps(&view) {
+            println!("Parsed pump_amm swap: {:?}", swap);
+        }
     }
 
     Ok(())
@@ -73,7 +87,7 @@ async fn main() -> Result<()> {
     let client::Subscription {
         sink: _sink,
         mut stream,
-    } = subscribe_pumpfun(&config).await?;
+    } = subscribe_pump_ecosystem(&config).await?;
 
     let listen_seconds = std::env::var("LISTEN_SECONDS")
         .ok()

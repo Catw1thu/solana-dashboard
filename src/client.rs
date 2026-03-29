@@ -1,4 +1,4 @@
-use crate::{config::Config, pumpfun::PUMPFUN_PROGRAM_ID};
+use crate::{config::Config, pumpamm::PUMP_AMM_PROGRAM_ID, pumpfun::PUMPFUN_PROGRAM_ID};
 use anyhow::Result;
 use futures::{Sink, Stream, channel::mpsc};
 use std::{collections::HashMap, pin::Pin};
@@ -15,7 +15,7 @@ pub struct Subscription {
     pub stream: UpdateStream,
 }
 
-pub async fn subscribe_pumpfun(config: &Config) -> Result<Subscription> {
+pub async fn subscribe_pump_ecosystem(config: &Config) -> Result<Subscription> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let mut builder = GeyserGrpcClient::build_from_shared(config.grpc_endpoint.clone())?
@@ -29,7 +29,7 @@ pub async fn subscribe_pumpfun(config: &Config) -> Result<Subscription> {
 
     let request = build_subscribe_request();
     let (sink, stream) = client.subscribe_with_request(Some(request)).await?;
-    println!("subscribed to pumpfun transactions");
+    println!("subscribed to pump ecosystem transactions");
 
     Ok(Subscription {
         sink: Box::pin(sink),
@@ -47,6 +47,18 @@ fn build_subscribe_request() -> SubscribeRequest {
             failed: Some(false),
             signature: None,
             account_include: vec![PUMPFUN_PROGRAM_ID.to_string()],
+            account_exclude: vec![],
+            account_required: vec![],
+        },
+    );
+
+    transactions.insert(
+        "pumpamm".to_string(),
+        SubscribeRequestFilterTransactions {
+            vote: Some(false),
+            failed: Some(false),
+            signature: None,
+            account_include: vec![PUMP_AMM_PROGRAM_ID.to_string()],
             account_exclude: vec![],
             account_required: vec![],
         },
