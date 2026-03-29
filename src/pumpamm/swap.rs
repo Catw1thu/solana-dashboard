@@ -1,5 +1,5 @@
 use super::{
-    events::extract_swap_events,
+    events::{extract_swap_cpi_events, extract_swap_events},
     invocation::extract_invocations,
     model::{
         ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent,
@@ -13,6 +13,11 @@ pub fn extract_swaps(view: &TransactionView) -> Vec<ParsedSwap> {
 
 pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
     let mut pending_events = extract_swap_events(&view.log_messages);
+    for event in extract_swap_cpi_events(&view.inner_instruction_groups) {
+        if !pending_events.contains(&event) {
+            pending_events.push(event);
+        }
+    }
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_swap())
@@ -133,9 +138,12 @@ mod tests {
             outer_instructions: vec![other_outer_ix()],
             inner_instruction_groups: vec![InnerInstructionGroup {
                 outer_instruction_index: 0,
-                instructions: vec![buy_exact_quote_in_inner_ix(accounts.clone())],
+                instructions: vec![
+                    buy_exact_quote_in_inner_ix(accounts.clone()),
+                    buy_event_inner_ix(),
+                ],
             }],
-            log_messages: vec![format!("Program data: {}", STANDARD.encode(buy_event_bytes()))],
+            log_messages: vec![],
         };
 
         let swaps = extract_swaps(&view);
@@ -191,6 +199,22 @@ mod tests {
             program_id: PUMP_AMM_PROGRAM_ID.to_string(),
             account_indices: (0..23).collect(),
             account_pubkeys: accounts,
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+            stack_height: Some(2),
+        }
+    }
+
+    fn buy_event_inner_ix() -> InnerInstructionView {
+        let mut data = vec![228, 69, 165, 46, 81, 203, 154, 29];
+        data.extend_from_slice(&buy_event_bytes());
+
+        InnerInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: vec![],
+            account_pubkeys: vec![],
             data_len: data.len(),
             data_prefix: data.iter().take(16).copied().collect(),
             data_base64: STANDARD.encode(data),

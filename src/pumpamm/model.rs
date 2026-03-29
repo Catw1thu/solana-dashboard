@@ -214,7 +214,7 @@ pub struct WithdrawIx {
     pub accounts: LiquidityAccounts,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BuyEvent {
     pub timestamp: i64,
     pub base_amount_out: u64,
@@ -250,7 +250,7 @@ pub struct BuyEvent {
     pub cashback: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SellEvent {
     pub timestamp: i64,
     pub base_amount_in: u64,
@@ -279,13 +279,13 @@ pub struct SellEvent {
     pub cashback: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum SwapEvent {
     Buy(BuyEvent),
     Sell(SellEvent),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CreatePoolEvent {
     pub timestamp: i64,
     pub index: u16,
@@ -310,7 +310,7 @@ pub struct CreatePoolEvent {
     pub is_mayhem_mode: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DepositEvent {
     pub timestamp: i64,
     pub lp_token_amount_out: u64,
@@ -330,7 +330,7 @@ pub struct DepositEvent {
     pub user_pool_token_account: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct WithdrawEvent {
     pub timestamp: i64,
     pub lp_token_amount_in: u64,
@@ -350,7 +350,7 @@ pub struct WithdrawEvent {
     pub user_pool_token_account: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum LiquidityEvent {
     Deposit(DepositEvent),
     Withdraw(WithdrawEvent),

@@ -198,7 +198,7 @@ pub struct MigrateIx {
     pub accounts: MigrateAccounts,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TradeEvent {
     pub mint: String,
     pub sol_amount: u64,
@@ -227,7 +227,7 @@ pub struct TradeEvent {
     pub cashback: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CreateEvent {
     pub name: String,
     pub symbol: String,
@@ -246,7 +246,7 @@ pub struct CreateEvent {
     pub is_cashback_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct MigrateEvent {
     pub user: String,
     pub mint: String,

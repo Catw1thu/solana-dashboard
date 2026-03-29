@@ -1,5 +1,5 @@
 use super::{
-    events::extract_trade_events,
+    events::{extract_trade_cpi_events, extract_trade_events},
     invocation::extract_invocations,
     model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
 };
@@ -11,6 +11,11 @@ pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
 
 pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
     let mut pending_events = extract_trade_events(&view.log_messages);
+    for event in extract_trade_cpi_events(&view.inner_instruction_groups) {
+        if !pending_events.contains(&event) {
+            pending_events.push(event);
+        }
+    }
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_trade())
@@ -105,10 +110,14 @@ mod tests {
     use crate::{
         pumpfun::{
             PUMPFUN_PROGRAM_ID,
+            discriminators::{BUY_IX_DISC, TRADE_EVENT_DISC},
             model::{InvocationSource, PumpfunInstruction, TradeSide},
         },
-        transaction_view::TransactionView,
+        transaction_view::{
+            InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
+        },
     };
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     fn load_fixture(file_name: &str) -> TransactionView {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -268,5 +277,124 @@ mod tests {
         assert!(second.sol_amount > 0);
         assert!(first.token_amount > 0);
         assert!(second.token_amount > 0);
+    }
+
+    #[test]
+    fn pumpfun_trade_can_fallback_to_inner_cpi_event() {
+        let accounts = fake_accounts(16);
+        let view = TransactionView {
+            slot: 0,
+            signature: "sig".to_string(),
+            tx_index: 0,
+            is_vote: false,
+            account_keys: vec![],
+            loaded_writable_addresses: vec![],
+            loaded_readonly_addresses: vec![],
+            all_accounts: accounts.clone(),
+            outer_instructions: vec![buy_outer_ix(accounts.clone())],
+            inner_instruction_groups: vec![InnerInstructionGroup {
+                outer_instruction_index: 0,
+                instructions: vec![trade_event_inner_ix(accounts.clone())],
+            }],
+            log_messages: vec![],
+        };
+
+        let trades = extract_trades(&view);
+        assert_eq!(trades.len(), 1);
+
+        let trade = &trades[0];
+        assert!(matches!(
+            trade.source,
+            InvocationSource::Outer { outer_index: 0 }
+        ));
+        assert!(matches!(trade.instruction, PumpfunInstruction::Buy(_)));
+        assert!(matches!(trade.side, TradeSide::Buy));
+        assert_eq!(trade.ix_name, "buy");
+        assert!(trade.is_buy);
+        assert_eq!(trade.mint, accounts[2]);
+        assert_eq!(trade.user, accounts[6]);
+        assert_eq!(trade.fee_recipient, accounts[1]);
+        assert_eq!(trade.creator, accounts[9]);
+        assert_eq!(trade.sol_amount, 111);
+        assert_eq!(trade.token_amount, 222);
+    }
+
+    fn fake_accounts(count: usize) -> Vec<String> {
+        (1..=count)
+            .map(|seed| bs58::encode([seed as u8; 32]).into_string())
+            .collect()
+    }
+
+    fn buy_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
+        let mut data = Vec::from(BUY_IX_DISC);
+        data.extend_from_slice(&222u64.to_le_bytes());
+        data.extend_from_slice(&333u64.to_le_bytes());
+        data.push(1);
+
+        OuterInstructionView {
+            program_id_index: 0,
+            program_id: PUMPFUN_PROGRAM_ID.to_string(),
+            account_indices: (0..16).collect(),
+            account_pubkeys: accounts,
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+        }
+    }
+
+    fn trade_event_inner_ix(accounts: Vec<String>) -> InnerInstructionView {
+        let mut data = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        data.extend_from_slice(&trade_event_bytes(&accounts));
+
+        InnerInstructionView {
+            program_id_index: 0,
+            program_id: PUMPFUN_PROGRAM_ID.to_string(),
+            account_indices: vec![],
+            account_pubkeys: vec![],
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+            stack_height: Some(2),
+        }
+    }
+
+    fn push_string(data: &mut Vec<u8>, value: &str) {
+        data.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        data.extend_from_slice(value.as_bytes());
+    }
+
+    fn trade_event_bytes(accounts: &[String]) -> Vec<u8> {
+        let mint = bs58::decode(&accounts[2]).into_vec().unwrap();
+        let fee_recipient = bs58::decode(&accounts[1]).into_vec().unwrap();
+        let user = bs58::decode(&accounts[6]).into_vec().unwrap();
+        let creator = bs58::decode(&accounts[9]).into_vec().unwrap();
+
+        let mut data = Vec::from(TRADE_EVENT_DISC);
+        data.extend_from_slice(&mint);
+        data.extend_from_slice(&111u64.to_le_bytes());
+        data.extend_from_slice(&222u64.to_le_bytes());
+        data.push(1);
+        data.extend_from_slice(&user);
+        data.extend_from_slice(&1_777_777_777i64.to_le_bytes());
+        data.extend_from_slice(&10u64.to_le_bytes());
+        data.extend_from_slice(&11u64.to_le_bytes());
+        data.extend_from_slice(&12u64.to_le_bytes());
+        data.extend_from_slice(&13u64.to_le_bytes());
+        data.extend_from_slice(&fee_recipient);
+        data.extend_from_slice(&30u64.to_le_bytes());
+        data.extend_from_slice(&3u64.to_le_bytes());
+        data.extend_from_slice(&creator);
+        data.extend_from_slice(&40u64.to_le_bytes());
+        data.extend_from_slice(&4u64.to_le_bytes());
+        data.push(1);
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&1_777_777_000i64.to_le_bytes());
+        push_string(&mut data, "buy");
+        data.push(0);
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data
     }
 }

@@ -1,5 +1,8 @@
 use super::{
-    events::{extract_create_pool_events, extract_liquidity_events},
+    events::{
+        extract_create_pool_cpi_events, extract_create_pool_events, extract_liquidity_cpi_events,
+        extract_liquidity_events,
+    },
     invocation::extract_invocations,
     model::{
         CreatePoolEvent, LiquidityAnalysis, LiquidityEvent, ParsedLiquidityAction,
@@ -14,6 +17,11 @@ pub fn extract_pool_creations(view: &TransactionView) -> Vec<ParsedPoolCreation>
 
 pub fn analyze_pool_creations(view: &TransactionView) -> PoolCreationAnalysis {
     let mut pending_events = extract_create_pool_events(&view.log_messages);
+    for event in extract_create_pool_cpi_events(&view.inner_instruction_groups) {
+        if !pending_events.contains(&event) {
+            pending_events.push(event);
+        }
+    }
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_create_pool())
@@ -48,6 +56,11 @@ pub fn extract_liquidity_actions(view: &TransactionView) -> Vec<ParsedLiquidityA
 
 pub fn analyze_liquidity_actions(view: &TransactionView) -> LiquidityAnalysis {
     let mut pending_events = extract_liquidity_events(&view.log_messages);
+    for event in extract_liquidity_cpi_events(&view.inner_instruction_groups) {
+        if !pending_events.contains(&event) {
+            pending_events.push(event);
+        }
+    }
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_liquidity())
@@ -184,7 +197,9 @@ mod tests {
         },
         model::{InvocationSource, LiquidityAction, LiquidityEvent, PumpAmmInstruction},
     };
-    use crate::transaction_view::{OuterInstructionView, TransactionView};
+    use crate::transaction_view::{
+        InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
+    };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::{fs, path::Path};
 
@@ -201,11 +216,11 @@ mod tests {
             loaded_readonly_addresses: vec![],
             all_accounts: accounts.clone(),
             outer_instructions: vec![create_pool_outer_ix(accounts.clone())],
-            inner_instruction_groups: vec![],
-            log_messages: vec![format!(
-                "Program data: {}",
-                STANDARD.encode(create_pool_event_bytes())
-            )],
+            inner_instruction_groups: vec![InnerInstructionGroup {
+                outer_instruction_index: 0,
+                instructions: vec![create_pool_event_inner_ix()],
+            }],
+            log_messages: vec![],
         };
 
         let creations = extract_pool_creations(&view);
@@ -294,11 +309,17 @@ mod tests {
                 deposit_outer_ix(deposit_accounts.clone()),
                 withdraw_outer_ix(withdraw_accounts.clone()),
             ],
-            inner_instruction_groups: vec![],
-            log_messages: vec![
-                format!("Program data: {}", STANDARD.encode(deposit_event_bytes())),
-                format!("Program data: {}", STANDARD.encode(withdraw_event_bytes())),
+            inner_instruction_groups: vec![
+                InnerInstructionGroup {
+                    outer_instruction_index: 0,
+                    instructions: vec![deposit_event_inner_ix()],
+                },
+                InnerInstructionGroup {
+                    outer_instruction_index: 1,
+                    instructions: vec![withdraw_event_inner_ix()],
+                },
             ],
+            log_messages: vec![],
         };
 
         let actions = extract_liquidity_actions(&view);
@@ -367,6 +388,22 @@ mod tests {
         }
     }
 
+    fn create_pool_event_inner_ix() -> InnerInstructionView {
+        let mut data = vec![228, 69, 165, 46, 81, 203, 154, 29];
+        data.extend_from_slice(&create_pool_event_bytes());
+
+        InnerInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: vec![],
+            account_pubkeys: vec![],
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+            stack_height: Some(2),
+        }
+    }
+
     fn deposit_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
         let mut data = Vec::from(DEPOSIT_IX_DISC);
         data.extend_from_slice(&10u64.to_le_bytes());
@@ -384,6 +421,22 @@ mod tests {
         }
     }
 
+    fn deposit_event_inner_ix() -> InnerInstructionView {
+        let mut data = vec![228, 69, 165, 46, 81, 203, 154, 29];
+        data.extend_from_slice(&deposit_event_bytes());
+
+        InnerInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: vec![],
+            account_pubkeys: vec![],
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+            stack_height: Some(2),
+        }
+    }
+
     fn withdraw_outer_ix(accounts: Vec<String>) -> OuterInstructionView {
         let mut data = Vec::from(WITHDRAW_IX_DISC);
         data.extend_from_slice(&11u64.to_le_bytes());
@@ -398,6 +451,22 @@ mod tests {
             data_len: data.len(),
             data_prefix: data.iter().take(16).copied().collect(),
             data_base64: STANDARD.encode(data),
+        }
+    }
+
+    fn withdraw_event_inner_ix() -> InnerInstructionView {
+        let mut data = vec![228, 69, 165, 46, 81, 203, 154, 29];
+        data.extend_from_slice(&withdraw_event_bytes());
+
+        InnerInstructionView {
+            program_id_index: 0,
+            program_id: PUMP_AMM_PROGRAM_ID.to_string(),
+            account_indices: vec![],
+            account_pubkeys: vec![],
+            data_len: data.len(),
+            data_prefix: data.iter().take(16).copied().collect(),
+            data_base64: STANDARD.encode(data),
+            stack_height: Some(2),
         }
     }
 

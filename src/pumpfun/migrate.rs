@@ -11,7 +11,11 @@ pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
 
 pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
     let mut pending_events = extract_migrate_events(&view.log_messages);
-    pending_events.extend(extract_migrate_cpi_events(&view.inner_instruction_groups));
+    for event in extract_migrate_cpi_events(&view.inner_instruction_groups) {
+        if !pending_events.contains(&event) {
+            pending_events.push(event);
+        }
+    }
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_migrate())

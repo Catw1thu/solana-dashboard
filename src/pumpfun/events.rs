@@ -1,6 +1,8 @@
 use super::{
     constants::PUMPFUN_PROGRAM_ID,
-    discriminators::{CREATE_EVENT_DISC, MIGRATE_EVENT_DISC, TRADE_EVENT_DISC},
+    discriminators::{
+        CREATE_EVENT_DISC, CREATE_V2_EVENT_DISC, MIGRATE_EVENT_DISC, TRADE_EVENT_DISC,
+    },
     model::{CreateEvent, MigrateEvent, TradeEvent},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -104,7 +106,7 @@ pub fn parse_trade_event_bytes(data: &[u8]) -> Option<TradeEvent> {
 
 pub fn parse_create_event_bytes(data: &[u8]) -> Option<CreateEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
-    if disc != CREATE_EVENT_DISC {
+    if disc != CREATE_EVENT_DISC && disc != CREATE_V2_EVENT_DISC {
         return None;
     }
 
@@ -179,6 +181,10 @@ pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
     events
 }
 
+pub fn extract_trade_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<TradeEvent> {
+    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_trade_event_bytes)
+}
+
 pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
     let mut events = Vec::new();
 
@@ -197,6 +203,10 @@ pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
     }
 
     events
+}
+
+pub fn extract_create_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<CreateEvent> {
+    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_create_event_bytes)
 }
 
 pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
@@ -220,11 +230,22 @@ pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
 }
 
 pub fn extract_migrate_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<MigrateEvent> {
+    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_migrate_event_bytes)
+}
+
+fn extract_inner_program_events<T, F>(
+    inner_groups: &[InnerInstructionGroup],
+    program_id: &str,
+    parser: F,
+) -> Vec<T>
+where
+    F: Fn(&[u8]) -> Option<T>,
+{
     let mut events = Vec::new();
 
     for group in inner_groups {
         for ix in &group.instructions {
-            if ix.program_id != PUMPFUN_PROGRAM_ID {
+            if ix.program_id != program_id {
                 continue;
             }
 
@@ -232,8 +253,8 @@ pub fn extract_migrate_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec
                 continue;
             };
 
-            if let Some(event) = parse_migrate_event_bytes(&bytes)
-                .or_else(|| bytes.get(8..).and_then(parse_migrate_event_bytes))
+            if let Some(event) =
+                parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser))
             {
                 events.push(event);
             }
