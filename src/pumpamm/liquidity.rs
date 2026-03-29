@@ -357,6 +357,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn pumpamm_real_withdraw_fixture_merges_successfully() {
+        let view = load_fixture(
+            "409590250-yoENqqk48Fq9LJa8wS8RJdtTgYLsSuFXaFJDbbAsD7G1mnGgYgRJDEeyMWFmKwsJzN9GjoFfd5PTceDKawW65pw.json",
+        );
+
+        let actions = extract_liquidity_actions(&view);
+        assert_eq!(actions.len(), 1);
+
+        let action = &actions[0];
+        assert!(matches!(
+            action.source,
+            InvocationSource::Outer { outer_index: 3 }
+        ));
+        assert!(matches!(action.action, LiquidityAction::Withdraw));
+        assert!(matches!(
+            action.instruction,
+            PumpAmmInstruction::Withdraw(_)
+        ));
+        assert_eq!(action.pool, "8naZnQi7SwC7sFP4Y1tEccaaunPGesDyG22CywDz2CJi");
+        assert_eq!(action.user, "9dBgK7Gx6ZLAmVSCw549LkEgkK61p6qv8wUG5qmVKn2x");
+        assert_eq!(action.pool, match &action.event {
+            LiquidityEvent::Withdraw(event) => event.pool.clone(),
+            LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
+        });
+        assert_eq!(action.user, match &action.event {
+            LiquidityEvent::Withdraw(event) => event.user.clone(),
+            LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
+        });
+    }
+
     fn load_fixture(file_name: &str) -> TransactionView {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("samples")
