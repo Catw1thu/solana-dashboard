@@ -186,6 +186,7 @@ mod tests {
     };
     use crate::transaction_view::{OuterInstructionView, TransactionView};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use std::{fs, path::Path};
 
     #[test]
     fn pumpamm_create_pool_merges_successfully() {
@@ -226,6 +227,54 @@ mod tests {
         assert_eq!(creation.lp_mint, accounts[5]);
         assert_eq!(creation.base_amount_in, 100);
         assert_eq!(creation.quote_amount_in, 200);
+    }
+
+    #[test]
+    fn pumpamm_create_pool_from_migration_fixture_merges_successfully() {
+        let view = load_fixture(
+            "409576108-3zCwTozsNVfMaSftorXKLbbdVAmNPaPy3oZXN5ch6eMBdYdKfoB9GAgsiwhAFq786wnYoP9Lv64XjC8LbaKnbijZ.json",
+        );
+
+        let creations = extract_pool_creations(&view);
+        assert_eq!(creations.len(), 1);
+
+        let creation = &creations[0];
+        assert!(matches!(
+            creation.source,
+            InvocationSource::Inner {
+                outer_index: 2,
+                inner_index: 22,
+            }
+        ));
+        assert!(matches!(
+            creation.instruction,
+            PumpAmmInstruction::CreatePool(_)
+        ));
+        assert_eq!(
+            creation.pool,
+            "DnxHHLuC5GbtqT5bo9jmrg4QQPSTZUzb2AcTNf93iwP5"
+        );
+        assert_eq!(
+            creation.creator,
+            "428jPeuGES9SfDBCkiBvoAKhL6TraBGFZ2oLDriWS2ya"
+        );
+        assert_eq!(
+            creation.base_mint,
+            "GVmgdyiK6xNTdAeqshXT3iGqhK36AvqZT1iQpKampump"
+        );
+        assert_eq!(
+            creation.quote_mint,
+            "So11111111111111111111111111111111111111112"
+        );
+        assert_eq!(
+            creation.lp_mint,
+            "9dFt11yagNYwqeL4iodHm8AUYS9Jtj9j8z1D4STevzbG"
+        );
+        assert_eq!(creation.pool, creation.event.pool);
+        assert_eq!(creation.creator, creation.event.creator);
+        assert!(creation.base_amount_in > 0);
+        assert!(creation.quote_amount_in > 0);
+        assert!(creation.initial_liquidity > 0);
     }
 
     #[test]
@@ -285,6 +334,17 @@ mod tests {
             }
             LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
         }
+    }
+
+    fn load_fixture(file_name: &str) -> TransactionView {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("samples")
+            .join("tests")
+            .join("views")
+            .join(file_name);
+
+        let content = fs::read_to_string(path).expect("fixture must exist");
+        serde_json::from_str(&content).expect("fixture must deserialize")
     }
 
     fn create_pool_outer_ix(accounts: Vec<String>) -> OuterInstructionView {

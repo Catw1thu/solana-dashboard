@@ -1,5 +1,5 @@
 use super::{
-    events::extract_migrate_events,
+    events::{extract_migrate_cpi_events, extract_migrate_events},
     invocation::extract_invocations,
     model::{MigrateAnalysis, MigrateEvent, ParsedMigrate, PumpfunInstruction, PumpfunInvocation},
 };
@@ -11,6 +11,7 @@ pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
 
 pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
     let mut pending_events = extract_migrate_events(&view.log_messages);
+    pending_events.extend(extract_migrate_cpi_events(&view.inner_instruction_groups));
     let invocations = extract_invocations(view)
         .into_iter()
         .filter(|invocation| invocation.instruction.is_migrate())
@@ -89,6 +90,7 @@ mod tests {
         InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use std::{fs, path::Path};
 
     #[test]
     fn pumpfun_migrate_from_inner_invocation_merges_successfully() {
@@ -139,6 +141,60 @@ mod tests {
         assert_eq!(migration.sol_amount, 456);
         assert_eq!(migration.pool_migration_fee, 7);
         assert_eq!(migration.timestamp, 1_777_777_777);
+    }
+
+    #[test]
+    fn pumpfun_migrate_real_fixture_merges_successfully() {
+        let view = load_fixture(
+            "409576108-3zCwTozsNVfMaSftorXKLbbdVAmNPaPy3oZXN5ch6eMBdYdKfoB9GAgsiwhAFq786wnYoP9Lv64XjC8LbaKnbijZ.json",
+        );
+
+        let migrations = extract_migrations(&view);
+        assert_eq!(migrations.len(), 1);
+
+        let migration = &migrations[0];
+        assert!(matches!(
+            migration.source,
+            InvocationSource::Outer { outer_index: 2 }
+        ));
+        assert!(matches!(
+            migration.instruction,
+            PumpfunInstruction::Migrate(_)
+        ));
+        assert_eq!(migration.mint, "GVmgdyiK6xNTdAeqshXT3iGqhK36AvqZT1iQpKampump");
+        assert_eq!(migration.user, "9C4nRvhhVquCKATjDCx5FKvNS9PNgNqgyWy9AcoDjYv5");
+        assert_eq!(
+            migration.bonding_curve,
+            "2MtHD2HTC5uE7mn5s7aekAAoYqEdTQFNXmuPMKXTDX3R"
+        );
+        assert_eq!(
+            migration.pool,
+            "DnxHHLuC5GbtqT5bo9jmrg4QQPSTZUzb2AcTNf93iwP5"
+        );
+        assert_eq!(
+            migration.pump_amm,
+            "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+        );
+        assert_eq!(
+            migration.lp_mint,
+            "9dFt11yagNYwqeL4iodHm8AUYS9Jtj9j8z1D4STevzbG"
+        );
+        assert_eq!(migration.mint, migration.event.mint);
+        assert_eq!(migration.user, migration.event.user);
+        assert_eq!(migration.pool, migration.event.pool);
+        assert!(migration.mint_amount > 0);
+        assert!(migration.sol_amount > 0);
+    }
+
+    fn load_fixture(file_name: &str) -> TransactionView {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("samples")
+            .join("tests")
+            .join("views")
+            .join(file_name);
+
+        let content = fs::read_to_string(path).expect("fixture must exist");
+        serde_json::from_str(&content).expect("fixture must deserialize")
     }
 
     fn other_outer_ix() -> OuterInstructionView {

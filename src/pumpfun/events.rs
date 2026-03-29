@@ -1,8 +1,10 @@
 use super::{
+    constants::PUMPFUN_PROGRAM_ID,
     discriminators::{CREATE_EVENT_DISC, MIGRATE_EVENT_DISC, TRADE_EVENT_DISC},
     model::{CreateEvent, MigrateEvent, TradeEvent},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use crate::transaction_view::InnerInstructionGroup;
 
 struct ByteReader<'a> {
     data: &'a [u8],
@@ -211,6 +213,30 @@ pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
 
         if let Some(event) = parse_migrate_event_bytes(&bytes) {
             events.push(event);
+        }
+    }
+
+    events
+}
+
+pub fn extract_migrate_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<MigrateEvent> {
+    let mut events = Vec::new();
+
+    for group in inner_groups {
+        for ix in &group.instructions {
+            if ix.program_id != PUMPFUN_PROGRAM_ID {
+                continue;
+            }
+
+            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
+                continue;
+            };
+
+            if let Some(event) = parse_migrate_event_bytes(&bytes)
+                .or_else(|| bytes.get(8..).and_then(parse_migrate_event_bytes))
+            {
+                events.push(event);
+            }
         }
     }
 
