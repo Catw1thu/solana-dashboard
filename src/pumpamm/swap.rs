@@ -112,7 +112,7 @@ fn build_swap(invocation: PumpAmmInvocation, event: SwapEvent) -> ParsedSwap {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_swaps;
+    use super::{analyze_swaps, extract_swaps};
     use crate::pumpamm::{
         constants::PUMP_AMM_PROGRAM_ID,
         discriminators::{BUY_EVENT_DISC, BUY_EXACT_QUOTE_IN_IX_DISC},
@@ -122,6 +122,7 @@ mod tests {
         InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use std::{fs, path::Path};
 
     #[test]
     fn pumpamm_buy_exact_quote_in_from_inner_merges_successfully() {
@@ -174,6 +175,37 @@ mod tests {
             }
             SwapEvent::Sell(_) => panic!("expected buy event"),
         }
+    }
+
+    #[test]
+    fn pumpamm_real_multi_swap_fixture_merges_successfully() {
+        let view = load_fixture(
+            "409587793-3sbc2gtmRvM5Jfr98dAzV2hwpKtAkLkKhgTGAqG6doxW29tYtiJ3TF2Xh9WNW9Aoq8hNCS5BaqfUPzu2MWo1jhyb.json",
+        );
+
+        let analysis = analyze_swaps(&view);
+        assert_eq!(analysis.swaps.len(), 2);
+        assert!(analysis.unmatched_invocations.is_empty());
+        assert!(analysis.unmatched_events.is_empty());
+
+        let swaps = extract_swaps(&view);
+        assert_eq!(swaps.len(), 2);
+        assert!(swaps.iter().all(|swap| matches!(swap.source, InvocationSource::Outer { .. })));
+        assert!(swaps.iter().any(|swap| matches!(swap.side, SwapSide::Buy)));
+        assert!(swaps.iter().any(|swap| matches!(swap.side, SwapSide::Sell)));
+        assert!(swaps.iter().all(|swap| !swap.pool.is_empty()));
+        assert!(swaps.iter().all(|swap| !swap.user.is_empty()));
+    }
+
+    fn load_fixture(file_name: &str) -> TransactionView {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("samples")
+            .join("tests")
+            .join("views")
+            .join(file_name);
+
+        let content = fs::read_to_string(path).expect("fixture must exist");
+        serde_json::from_str(&content).expect("fixture must deserialize")
     }
 
     fn other_outer_ix() -> OuterInstructionView {
