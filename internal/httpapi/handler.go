@@ -37,24 +37,24 @@ func (h *Handler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 
-	var env events.Envelope
+	var event events.Envelope
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err := decoder.Decode(&env); err != nil {
+	if err := decoder.Decode(&event); err != nil {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
 
-	if env.EventID == "" || env.Protocol == "" || env.EventType == "" {
+	if event.EventID == "" || event.Protocol == "" || event.EventType == "" {
 		http.Error(w, "missing required fields", http.StatusBadRequest)
 		return
 	}
 
 	log.Printf(
 		"event_id=%s protocol=%s type=%s slot=%d sig=%s",
-		env.EventID, env.Protocol, env.EventType, env.Slot, env.TxSignature,
+		event.EventID, event.Protocol, event.EventType, event.Slot, event.TxSignature,
 	)
 
-	if err := h.service.HandleEvent(r.Context(), env); err != nil {
+	if err := h.service.HandleEvent(r.Context(), event); err != nil {
 		http.Error(w, "failed to handle event", http.StatusBadRequest)
 		return
 	}

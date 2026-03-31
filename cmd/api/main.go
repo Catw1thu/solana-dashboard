@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/realtime"
 	"time"
 )
 
 func main() {
-	service := ingest.NewService()
+	hub := realtime.NewHub()
+	service := ingest.NewService(hub)
 	handler := httpapi.NewHandler(service)
 
 	mux := http.NewServeMux()

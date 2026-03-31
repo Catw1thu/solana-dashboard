@@ -6,12 +6,16 @@ import (
 	"testing"
 
 	"solana-dashboard-go/internal/events"
+	"solana-dashboard-go/internal/realtime"
 )
 
 func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
-	service := NewService()
+	hub := realtime.NewHub()
+	service := NewService(hub)
+	ch := hub.Subscribe(1)
+	defer hub.Unsubscribe(ch)
 
-	env := events.Envelope{
+	event := events.Envelope{
 		EventID:   "solana:pumpamm:swap:testsig:outer:1",
 		Protocol:  "pumpamm",
 		EventType: "swap",
@@ -44,7 +48,16 @@ func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 		}`),
 	}
 
-	if err := service.HandleEvent(context.Background(), env); err != nil {
+	if err := service.HandleEvent(context.Background(), event); err != nil {
 		t.Fatalf("HandleEvent returned error: %v", err)
+	}
+
+	select {
+	case got := <-ch:
+		if got.EventID != event.EventID {
+			t.Fatalf("expected event_id=%s, got %s", event.EventID, got.EventID)
+		}
+	default:
+		t.Fatal("expected handled event to be published to hub")
 	}
 }

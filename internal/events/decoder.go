@@ -5,22 +5,21 @@ import (
 	"fmt"
 )
 
-func DecodePayload(env Envelope) (any, error) {
+func DecodePayload(event Envelope) (any, error) {
 	switch {
-	case env.Protocol == "pumpfun" && env.EventType == "trade":
+	case event.Protocol == "pumpfun" && event.EventType == "trade":
 		var payload PumpfunTradePayload
-		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			return nil, err
 		}
 		return payload, nil
-	case env.Protocol == "pumpamm" && env.EventType == "swap":
+	case event.Protocol == "pumpamm" && event.EventType == "swap":
 		var payload PumpAmmSwapPayload
-		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			return nil, err
 		}
 		return payload, nil
 	default:
-		return nil, fmt.Errorf("unsupported event type: %s.%s", env.Protocol, env.EventType)
+		return nil, fmt.Errorf("unsupported event type: %s.%s", event.Protocol, event.EventType)
 	}
-
 }

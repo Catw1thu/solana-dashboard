@@ -6,7 +6,7 @@ import (
 )
 
 func TestDecodePayloadPumpfunTrade(t *testing.T) {
-	env := Envelope{
+	event := Envelope{
 		Protocol:  "pumpfun",
 		EventType: "trade",
 		Payload: json.RawMessage(`{
@@ -39,7 +39,7 @@ func TestDecodePayloadPumpfunTrade(t *testing.T) {
 		}`),
 	}
 
-	payload, err := DecodePayload(env)
+	payload, err := DecodePayload(event)
 	if err != nil {
 		t.Fatalf("DecodePayload returned error: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestDecodePayloadPumpfunTrade(t *testing.T) {
 }
 
 func TestDecodePayloadPumpAmmSwap(t *testing.T) {
-	env := Envelope{
+	event := Envelope{
 		Protocol:  "pumpamm",
 		EventType: "swap",
 		Payload: json.RawMessage(`{
@@ -95,7 +95,7 @@ func TestDecodePayloadPumpAmmSwap(t *testing.T) {
 		}`),
 	}
 
-	payload, err := DecodePayload(env)
+	payload, err := DecodePayload(event)
 	if err != nil {
 		t.Fatalf("DecodePayload returned error: %v", err)
 	}
