@@ -5,11 +5,13 @@ import (
 	"log"
 	"net/http"
 	"solana-dashboard-go/internal/httpapi"
+	"solana-dashboard-go/internal/ingest"
 	"time"
 )
 
 func main() {
-	handler := httpapi.NewHandler()
+	service := ingest.NewService()
+	handler := httpapi.NewHandler(service)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)

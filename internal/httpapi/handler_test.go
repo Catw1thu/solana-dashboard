@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"solana-dashboard-go/internal/ingest"
 	"testing"
 )
 
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
-	handler := NewHandler()
+	service := ingest.NewService()
+	handler := NewHandler(service)
 
 	body := []byte(`{
 		"schema_version":1,
@@ -79,7 +81,8 @@ func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 }
 
 func TestIngestEventRejectsInvalidJSON(t *testing.T) {
-	handler := NewHandler()
+	service := ingest.NewService()
+	handler := NewHandler(service)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/events", bytes.NewBufferString("{"))
 	req.Header.Set("Content-Type", "application/json")

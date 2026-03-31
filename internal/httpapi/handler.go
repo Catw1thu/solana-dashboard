@@ -5,13 +5,17 @@ import (
 	"log"
 	"net/http"
 	"solana-dashboard-go/internal/events"
+	"solana-dashboard-go/internal/ingest"
 )
 
 type Handler struct {
+	service *ingest.Service
 }
 
-func NewHandler() *Handler {
-	return &Handler{}
+func NewHandler(service *ingest.Service) *Handler {
+	return &Handler{
+		service: service,
+	}
 }
 
 func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
@@ -50,18 +54,9 @@ func (h *Handler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 		env.EventID, env.Protocol, env.EventType, env.Slot, env.TxSignature,
 	)
 
-	payload, err := events.DecodePayload(env)
-	if err != nil {
-		http.Error(w, "failed to decode payload", http.StatusBadRequest)
+	if err := h.service.HandleEvent(r.Context(), env); err != nil {
+		http.Error(w, "failed to handle event", http.StatusBadRequest)
 		return
-	}
-	switch p := payload.(type) {
-	case events.PumpfunTradePayload:
-		log.Printf("[pumpfun trade] mint=%s user=%s side=%s", p.Mint, p.User, p.Side)
-	case events.PumpAmmSwapPayload:
-		log.Printf("[pumpamm swap] pool=%s user=%s side=%s", p.Pool, p.User, p.Side)
-	default:
-		log.Printf("decoded unsupported payload type %T", p)
 	}
 
 	w.WriteHeader(http.StatusAccepted)
