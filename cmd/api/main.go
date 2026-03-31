@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
+	"solana-dashboard-go/internal/config"
+	"solana-dashboard-go/internal/db"
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/realtime"
@@ -11,6 +14,17 @@ import (
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	ctx := context.Background()
+	database, err := db.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
+	defer database.Close()
+
 	hub := realtime.NewHub()
 	service := ingest.NewService(hub)
 	handler := httpapi.NewHandler(service)
