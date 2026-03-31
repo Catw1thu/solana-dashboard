@@ -37,3 +37,11 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 		return fmt.Errorf("unsupported payload type=%T", p)
 	}
 }
+
+func (s *Service) Subscribe(buffer int) chan events.Envelope {
+	return s.hub.Subscribe(buffer)
+}
+
+func (s *Service) Unsubscribe(ch chan events.Envelope) {
+	s.hub.Unsubscribe(ch)
+}

@@ -18,6 +18,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)
 	mux.HandleFunc("/internal/events", handler.IngestEvent)
+	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{
 		Addr:              ":8080",
