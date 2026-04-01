@@ -21,7 +21,10 @@ pub fn analyze_pool_creations(view: &TransactionView) -> PoolCreationAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_create_pool_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
@@ -63,7 +66,10 @@ pub fn analyze_liquidity_actions(view: &TransactionView) -> LiquidityAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_liquidity_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
@@ -340,7 +346,10 @@ mod tests {
             InvocationSource::Outer { outer_index: 0 }
         ));
         assert!(matches!(actions[0].action, LiquidityAction::Deposit));
-        assert!(matches!(actions[0].instruction, PumpAmmInstruction::Deposit(_)));
+        assert!(matches!(
+            actions[0].instruction,
+            PumpAmmInstruction::Deposit(_)
+        ));
         match &actions[0].event {
             LiquidityEvent::Deposit(event) => {
                 assert_eq!(event.pool, deposit_accounts[0]);
@@ -388,14 +397,20 @@ mod tests {
         ));
         assert_eq!(action.pool, "8naZnQi7SwC7sFP4Y1tEccaaunPGesDyG22CywDz2CJi");
         assert_eq!(action.user, "9dBgK7Gx6ZLAmVSCw549LkEgkK61p6qv8wUG5qmVKn2x");
-        assert_eq!(action.pool, match &action.event {
-            LiquidityEvent::Withdraw(event) => event.pool.clone(),
-            LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
-        });
-        assert_eq!(action.user, match &action.event {
-            LiquidityEvent::Withdraw(event) => event.user.clone(),
-            LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
-        });
+        assert_eq!(
+            action.pool,
+            match &action.event {
+                LiquidityEvent::Withdraw(event) => event.pool.clone(),
+                LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
+            }
+        );
+        assert_eq!(
+            action.user,
+            match &action.event {
+                LiquidityEvent::Withdraw(event) => event.user.clone(),
+                LiquidityEvent::Deposit(_) => panic!("expected withdraw"),
+            }
+        );
     }
 
     fn load_fixture(file_name: &str) -> TransactionView {

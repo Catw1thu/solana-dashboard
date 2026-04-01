@@ -63,7 +63,9 @@ impl<'a> ByteReader<'a> {
         let len_bytes: [u8; 4] = self.read_bytes(4)?.try_into().ok()?;
         let len = u32::from_le_bytes(len_bytes) as usize;
         let bytes = self.read_bytes(len)?;
-        std::str::from_utf8(bytes).ok().map(|value| value.to_string())
+        std::str::from_utf8(bytes)
+            .ok()
+            .map(|value| value.to_string())
     }
 }
 
@@ -378,9 +380,7 @@ where
                 continue;
             };
 
-            if let Some(event) =
-                parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser))
-            {
+            if let Some(event) = parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser)) {
                 events.push(event);
             }
         }

@@ -5,8 +5,8 @@ use super::{
     },
     model::{CreateEvent, MigrateEvent, TradeEvent},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use crate::transaction_view::InnerInstructionGroup;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct ByteReader<'a> {
     data: &'a [u8],
@@ -253,9 +253,7 @@ where
                 continue;
             };
 
-            if let Some(event) =
-                parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser))
-            {
+            if let Some(event) = parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser)) {
                 events.push(event);
             }
         }

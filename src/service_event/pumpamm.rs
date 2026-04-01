@@ -195,8 +195,7 @@ pub fn build_pumpamm_create_pool_service_event(
         event_source: creation.event_source,
         event_unix_ts: creation.event.timestamp,
         refs,
-        payload: serde_json::to_value(payload)
-            .expect("pumpamm create_pool payload must serialize"),
+        payload: serde_json::to_value(payload).expect("pumpamm create_pool payload must serialize"),
     }
 }
 
@@ -245,7 +244,9 @@ pub fn build_pumpamm_liquidity_service_event(
     }
 }
 
-fn build_instruction_path(source: &crate::pumpamm::model::InvocationSource) -> ServiceInstructionPath {
+fn build_instruction_path(
+    source: &crate::pumpamm::model::InvocationSource,
+) -> ServiceInstructionPath {
     match source {
         crate::pumpamm::model::InvocationSource::Outer { outer_index } => ServiceInstructionPath {
             source: ServiceInstructionSource::Outer,
@@ -264,27 +265,34 @@ fn build_instruction_path(source: &crate::pumpamm::model::InvocationSource) -> S
 }
 
 fn build_liquidity_payload(action: &ParsedLiquidityAction) -> PumpAmmLiquidityPayload {
-    let (lp_token_amount_in, lp_token_amount_out, base_amount_in, quote_amount_in, base_amount_out, quote_amount_out, lp_mint_supply) =
-        match &action.event {
-            LiquidityEvent::Deposit(event) => (
-                None,
-                Some(event.lp_token_amount_out.to_string()),
-                Some(event.base_amount_in.to_string()),
-                Some(event.quote_amount_in.to_string()),
-                None,
-                None,
-                event.lp_mint_supply.to_string(),
-            ),
-            LiquidityEvent::Withdraw(event) => (
-                Some(event.lp_token_amount_in.to_string()),
-                None,
-                None,
-                None,
-                Some(event.base_amount_out.to_string()),
-                Some(event.quote_amount_out.to_string()),
-                event.lp_mint_supply.to_string(),
-            ),
-        };
+    let (
+        lp_token_amount_in,
+        lp_token_amount_out,
+        base_amount_in,
+        quote_amount_in,
+        base_amount_out,
+        quote_amount_out,
+        lp_mint_supply,
+    ) = match &action.event {
+        LiquidityEvent::Deposit(event) => (
+            None,
+            Some(event.lp_token_amount_out.to_string()),
+            Some(event.base_amount_in.to_string()),
+            Some(event.quote_amount_in.to_string()),
+            None,
+            None,
+            event.lp_mint_supply.to_string(),
+        ),
+        LiquidityEvent::Withdraw(event) => (
+            Some(event.lp_token_amount_in.to_string()),
+            None,
+            None,
+            None,
+            Some(event.base_amount_out.to_string()),
+            Some(event.quote_amount_out.to_string()),
+            event.lp_mint_supply.to_string(),
+        ),
+    };
 
     let instruction_args = match &action.instruction {
         PumpAmmInstruction::Deposit(ix) => PumpAmmLiquidityInstructionArgs {
@@ -528,7 +536,10 @@ mod tests {
 
         assert_eq!(service_event.schema_version, 1);
         assert_eq!(service_event.tx_signature, view.signature);
-        assert_eq!(service_event.refs.pool.as_deref(), Some(creation.pool.as_str()));
+        assert_eq!(
+            service_event.refs.pool.as_deref(),
+            Some(creation.pool.as_str())
+        );
         assert_eq!(
             service_event.refs.creator.as_deref(),
             Some(creation.creator.as_str())
@@ -558,8 +569,14 @@ mod tests {
 
         assert_eq!(service_event.schema_version, 1);
         assert_eq!(service_event.tx_signature, view.signature);
-        assert_eq!(service_event.refs.pool.as_deref(), Some(action.pool.as_str()));
-        assert_eq!(service_event.refs.user.as_deref(), Some(action.user.as_str()));
+        assert_eq!(
+            service_event.refs.pool.as_deref(),
+            Some(action.pool.as_str())
+        );
+        assert_eq!(
+            service_event.refs.user.as_deref(),
+            Some(action.user.as_str())
+        );
         assert_eq!(
             service_event.refs.base_mint.as_deref(),
             Some(action.base_mint.as_str())

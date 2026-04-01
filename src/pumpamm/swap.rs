@@ -1,9 +1,7 @@
 use super::{
     events::{extract_swap_cpi_events, extract_swap_events},
     invocation::extract_invocations,
-    model::{
-        ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent,
-    },
+    model::{ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent},
 };
 use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
 
@@ -17,7 +15,10 @@ pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_swap_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
@@ -166,7 +167,10 @@ mod tests {
                 inner_index: 0
             }
         ));
-        assert!(matches!(swap.instruction, PumpAmmInstruction::BuyExactQuoteIn(_)));
+        assert!(matches!(
+            swap.instruction,
+            PumpAmmInstruction::BuyExactQuoteIn(_)
+        ));
         assert!(matches!(swap.side, SwapSide::BuyExactQuoteIn));
         assert_eq!(swap.pool, accounts[0]);
         assert_eq!(swap.user, accounts[1]);
@@ -198,7 +202,11 @@ mod tests {
 
         let swaps = extract_swaps(&view);
         assert_eq!(swaps.len(), 2);
-        assert!(swaps.iter().all(|swap| matches!(swap.source, InvocationSource::Outer { .. })));
+        assert!(
+            swaps
+                .iter()
+                .all(|swap| matches!(swap.source, InvocationSource::Outer { .. }))
+        );
         assert!(swaps.iter().any(|swap| matches!(swap.side, SwapSide::Buy)));
         assert!(swaps.iter().any(|swap| matches!(swap.side, SwapSide::Sell)));
         assert!(swaps.iter().all(|swap| !swap.pool.is_empty()));

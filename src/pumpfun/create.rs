@@ -15,7 +15,10 @@ pub fn analyze_creates(view: &TransactionView) -> CreateAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_create_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }

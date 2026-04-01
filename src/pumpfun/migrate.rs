@@ -15,7 +15,10 @@ pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_migrate_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
@@ -173,8 +176,14 @@ mod tests {
             migration.instruction,
             PumpfunInstruction::Migrate(_)
         ));
-        assert_eq!(migration.mint, "GVmgdyiK6xNTdAeqshXT3iGqhK36AvqZT1iQpKampump");
-        assert_eq!(migration.user, "9C4nRvhhVquCKATjDCx5FKvNS9PNgNqgyWy9AcoDjYv5");
+        assert_eq!(
+            migration.mint,
+            "GVmgdyiK6xNTdAeqshXT3iGqhK36AvqZT1iQpKampump"
+        );
+        assert_eq!(
+            migration.user,
+            "9C4nRvhhVquCKATjDCx5FKvNS9PNgNqgyWy9AcoDjYv5"
+        );
         assert_eq!(
             migration.bonding_curve,
             "2MtHD2HTC5uE7mn5s7aekAAoYqEdTQFNXmuPMKXTDX3R"

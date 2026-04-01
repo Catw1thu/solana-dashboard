@@ -4,9 +4,7 @@ use super::{
     model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
 };
 use crate::{
-    event_origin::EventOrigin,
-    pumpfun::model::TradeAnalysis,
-    transaction_view::TransactionView,
+    event_origin::EventOrigin, pumpfun::model::TradeAnalysis, transaction_view::TransactionView,
 };
 
 pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
@@ -19,7 +17,10 @@ pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
         .map(|event| (EventOrigin::Logs, event))
         .collect::<Vec<_>>();
     for event in extract_trade_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+        if !pending_events
+            .iter()
+            .any(|(_, existing)| existing == &event)
+        {
             pending_events.push((EventOrigin::InnerCpi, event));
         }
     }

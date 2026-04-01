@@ -13,7 +13,7 @@ use config::load_config;
 use futures::StreamExt;
 use pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps};
 use pumpfun::{extract_creates, extract_migrations, extract_trades};
-use service_event::collect_service_events;
+use service_event::{ServiceEventEmitter, collect_service_events};
 use tokio::time::{Duration, Instant};
 use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
@@ -45,7 +45,10 @@ fn print_tx_summary(tx: &SubscribeUpdateTransaction) {
     );
 }
 
-fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
+async fn persist_transaction_samples(
+    tx: &SubscribeUpdateTransaction,
+    emitter: &ServiceEventEmitter,
+) -> Result<()> {
     let Some(info) = &tx.transaction else {
         return Ok(());
     };
@@ -83,6 +86,7 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
         for service_event in collect_service_events(&view) {
             let json = serde_json::to_string(&service_event)?;
             println!("Service event: {json}");
+            emitter.emit(&service_event).await?;
         }
     }
 
@@ -92,6 +96,8 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = load_config()?;
+    let service_event_emitter =
+        ServiceEventEmitter::new(config.service_event_ingest_url.as_deref())?;
     let client::Subscription {
         sink: _sink,
         mut stream,
@@ -108,7 +114,7 @@ async fn main() -> Result<()> {
             let update = message?;
             match update.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
-                    persist_transaction_samples(&tx)?;
+                    persist_transaction_samples(&tx, &service_event_emitter).await?;
                 }
                 _ => {}
             }

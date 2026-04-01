@@ -36,10 +36,7 @@ impl PumpAmmInstruction {
         match self {
             Self::Deposit(ix) => Some(&ix.accounts),
             Self::Withdraw(ix) => Some(&ix.accounts),
-            Self::Buy(_)
-            | Self::BuyExactQuoteIn(_)
-            | Self::Sell(_)
-            | Self::CreatePool(_) => None,
+            Self::Buy(_) | Self::BuyExactQuoteIn(_) | Self::Sell(_) | Self::CreatePool(_) => None,
         }
     }
 
@@ -72,7 +69,10 @@ impl PumpAmmInstruction {
     }
 
     pub fn is_swap(&self) -> bool {
-        matches!(self, Self::Buy(_) | Self::BuyExactQuoteIn(_) | Self::Sell(_))
+        matches!(
+            self,
+            Self::Buy(_) | Self::BuyExactQuoteIn(_) | Self::Sell(_)
+        )
     }
 
     pub fn is_create_pool(&self) -> bool {
@@ -362,8 +362,13 @@ pub enum LiquidityEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InvocationSource {
-    Outer { outer_index: usize },
-    Inner { outer_index: usize, inner_index: usize },
+    Outer {
+        outer_index: usize,
+    },
+    Inner {
+        outer_index: usize,
+        inner_index: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

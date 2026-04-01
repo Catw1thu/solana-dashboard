@@ -239,7 +239,9 @@ pub fn build_pumpfun_migrate_service_event(
     }
 }
 
-fn build_instruction_path(source: &crate::pumpfun::model::InvocationSource) -> ServiceInstructionPath {
+fn build_instruction_path(
+    source: &crate::pumpfun::model::InvocationSource,
+) -> ServiceInstructionPath {
     match source {
         crate::pumpfun::model::InvocationSource::Outer { outer_index } => ServiceInstructionPath {
             source: ServiceInstructionSource::Outer,
@@ -354,12 +356,18 @@ mod tests {
         assert_eq!(service_event.schema_version, 1);
         assert_eq!(service_event.tx_signature, view.signature);
         assert_eq!(service_event.slot, view.slot);
-        assert_eq!(service_event.refs.mint.as_deref(), Some(trade.mint.as_str()));
+        assert_eq!(
+            service_event.refs.mint.as_deref(),
+            Some(trade.mint.as_str())
+        );
         assert_eq!(
             service_event.refs.bonding_curve.as_deref(),
             Some(trade.bonding_curve.as_str())
         );
-        assert_eq!(service_event.refs.user.as_deref(), Some(trade.user.as_str()));
+        assert_eq!(
+            service_event.refs.user.as_deref(),
+            Some(trade.user.as_str())
+        );
         assert!(service_event.event_id.contains(":pumpfun:trade:"));
     }
 
@@ -373,12 +381,18 @@ mod tests {
 
         assert_eq!(service_event.schema_version, 1);
         assert_eq!(service_event.tx_signature, view.signature);
-        assert_eq!(service_event.refs.mint.as_deref(), Some(create.mint.as_str()));
+        assert_eq!(
+            service_event.refs.mint.as_deref(),
+            Some(create.mint.as_str())
+        );
         assert_eq!(
             service_event.refs.bonding_curve.as_deref(),
             Some(create.bonding_curve.as_str())
         );
-        assert_eq!(service_event.refs.user.as_deref(), Some(create.user.as_str()));
+        assert_eq!(
+            service_event.refs.user.as_deref(),
+            Some(create.user.as_str())
+        );
         assert_eq!(
             service_event.refs.creator.as_deref(),
             Some(create.creator.as_str())
@@ -396,14 +410,26 @@ mod tests {
 
         assert_eq!(service_event.schema_version, 1);
         assert_eq!(service_event.tx_signature, view.signature);
-        assert_eq!(service_event.refs.mint.as_deref(), Some(migration.mint.as_str()));
+        assert_eq!(
+            service_event.refs.mint.as_deref(),
+            Some(migration.mint.as_str())
+        );
         assert_eq!(
             service_event.refs.bonding_curve.as_deref(),
             Some(migration.bonding_curve.as_str())
         );
-        assert_eq!(service_event.refs.user.as_deref(), Some(migration.user.as_str()));
-        assert_eq!(service_event.refs.pool.as_deref(), Some(migration.pool.as_str()));
-        assert_eq!(service_event.refs.lp_mint.as_deref(), Some(migration.lp_mint.as_str()));
+        assert_eq!(
+            service_event.refs.user.as_deref(),
+            Some(migration.user.as_str())
+        );
+        assert_eq!(
+            service_event.refs.pool.as_deref(),
+            Some(migration.pool.as_str())
+        );
+        assert_eq!(
+            service_event.refs.lp_mint.as_deref(),
+            Some(migration.lp_mint.as_str())
+        );
         assert!(service_event.event_id.contains(":pumpfun:migrate:"));
     }
 }
