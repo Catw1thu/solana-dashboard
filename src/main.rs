@@ -4,6 +4,7 @@ mod event_origin;
 mod pumpamm;
 mod pumpfun;
 mod service_event;
+mod tracker;
 mod transaction_view;
 mod writer;
 
@@ -15,6 +16,7 @@ use pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps};
 use pumpfun::{extract_creates, extract_migrations, extract_trades};
 use service_event::{ServiceEventEmitter, collect_service_events};
 use tokio::time::{Duration, Instant};
+use tracker::{TrackedMintTracker, is_create_event, is_migrate_event};
 use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
@@ -48,6 +50,7 @@ fn print_tx_summary(tx: &SubscribeUpdateTransaction) {
 async fn persist_transaction_samples(
     tx: &SubscribeUpdateTransaction,
     emitter: &ServiceEventEmitter,
+    tracker: &mut TrackedMintTracker,
 ) -> Result<()> {
     let Some(info) = &tx.transaction else {
         return Ok(());
@@ -83,7 +86,31 @@ async fn persist_transaction_samples(
             println!("Parsed pump_amm swap: {:?}", swap);
         }
 
-        for service_event in collect_service_events(&view) {
+        let service_events = collect_service_events(&view);
+
+        for service_event in service_events.iter().filter(|event| is_create_event(event)) {
+            if let Err(err) = tracker.accept_create_event(service_event).await {
+                eprintln!(
+                    "failed to accept tracked token from create event {}: {err}",
+                    service_event.event_id
+                );
+            }
+        }
+
+        for service_event in service_events {
+            if !tracker.should_forward(&service_event) {
+                continue;
+            }
+
+            if is_migrate_event(&service_event) {
+                if let Err(err) = tracker.record_migration_event(&service_event).await {
+                    eprintln!(
+                        "failed to record migration for event {}: {err}",
+                        service_event.event_id
+                    );
+                }
+            }
+
             let json = serde_json::to_string(&service_event)?;
             println!("Service event: {json}");
             emitter.emit(&service_event).await?;
@@ -98,6 +125,7 @@ async fn main() -> Result<()> {
     let config = load_config()?;
     let service_event_emitter =
         ServiceEventEmitter::new(config.service_event_ingest_url.as_deref())?;
+    let mut tracker = TrackedMintTracker::new(&config.database_url, &config.redis_url).await?;
     let client::Subscription {
         sink: _sink,
         mut stream,
@@ -114,7 +142,7 @@ async fn main() -> Result<()> {
             let update = message?;
             match update.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
-                    persist_transaction_samples(&tx, &service_event_emitter).await?;
+                    persist_transaction_samples(&tx, &service_event_emitter, &mut tracker).await?;
                 }
                 _ => {}
             }

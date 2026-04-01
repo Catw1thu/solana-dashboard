@@ -4,20 +4,20 @@ use serde_json::Value;
 
 pub const SERVICE_EVENT_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceEventChain {
     Solana,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceEventProtocol {
     Pumpfun,
     Pumpamm,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceEventType {
@@ -30,7 +30,7 @@ pub enum ServiceEventType {
     Withdraw,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceCommitmentLevel {
@@ -39,7 +39,7 @@ pub enum ServiceCommitmentLevel {
     Finalized,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceInstructionSource {
     Outer,

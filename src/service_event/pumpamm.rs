@@ -8,6 +8,7 @@ use crate::{
         LiquidityAction, LiquidityEvent, ParsedLiquidityAction, ParsedPoolCreation, ParsedSwap,
         PumpAmmInstruction, SwapEvent, SwapSide,
     },
+    tracker::resolve_non_sol_mint,
     transaction_view::TransactionView,
 };
 use serde::Serialize;
@@ -101,7 +102,7 @@ pub fn build_pumpamm_swap_service_event(
 ) -> ServiceEventEnvelope {
     let instruction_path = build_instruction_path(&swap.source);
     let refs = ServiceEventRefs {
-        mint: None,
+        mint: resolve_non_sol_mint(&swap.base_mint, &swap.quote_mint).map(str::to_string),
         pool: Some(swap.pool.clone()),
         bonding_curve: None,
         user: Some(swap.user.clone()),
@@ -143,7 +144,7 @@ pub fn build_pumpamm_create_pool_service_event(
 ) -> ServiceEventEnvelope {
     let instruction_path = build_instruction_path(&creation.source);
     let refs = ServiceEventRefs {
-        mint: None,
+        mint: resolve_non_sol_mint(&creation.base_mint, &creation.quote_mint).map(str::to_string),
         pool: Some(creation.pool.clone()),
         bonding_curve: None,
         user: None,
@@ -205,7 +206,7 @@ pub fn build_pumpamm_liquidity_service_event(
 ) -> ServiceEventEnvelope {
     let instruction_path = build_instruction_path(&action.source);
     let refs = ServiceEventRefs {
-        mint: None,
+        mint: resolve_non_sol_mint(&action.base_mint, &action.quote_mint).map(str::to_string),
         pool: Some(action.pool.clone()),
         bonding_curve: None,
         user: Some(action.user.clone()),
