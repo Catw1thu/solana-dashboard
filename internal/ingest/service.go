@@ -32,8 +32,16 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 	switch p := payload.(type) {
 	case events.PumpfunTradePayload:
 		log.Printf("[ingest] pumpfun trade mint=%s user=%s side=%s", p.Mint, p.User, p.Side)
+	case events.PumpfunCreatePayload:
+		log.Printf("[ingest] pumpfun create mint=%s creator=%s symbol=%s", p.Mint, p.Creator, p.Symbol)
+	case events.PumpfunMigratePayload:
+		log.Printf("[ingest] pumpfun migrate mint=%s pool=%s", p.Mint, p.Pool)
 	case events.PumpAmmSwapPayload:
 		log.Printf("[ingest] pumpamm swap pool=%s user=%s side=%s", p.Pool, p.User, p.Side)
+	case events.PumpAmmCreatePoolPayload:
+		log.Printf("[ingest] pumpamm create_pool pool=%s creator=%s", p.Pool, p.Creator)
+	case events.PumpAmmLiquidityPayload:
+		log.Printf("[ingest] pumpamm liquidity action=%s pool=%s user=%s", p.Action, p.Pool, p.User)
 	default:
 		return fmt.Errorf("unsupported payload type=%T", p)
 	}
