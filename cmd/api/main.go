@@ -37,7 +37,7 @@ func main() {
 	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              cfg.APIAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

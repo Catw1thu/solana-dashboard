@@ -55,6 +55,7 @@ func (h *Handler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := h.service.HandleEvent(r.Context(), event); err != nil {
+		log.Printf("failed to handle event_id=%s: %v", event.EventID, err)
 		http.Error(w, "failed to handle event", http.StatusBadRequest)
 		return
 	}
