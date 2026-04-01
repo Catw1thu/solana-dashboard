@@ -2,16 +2,28 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/realtime"
 	"testing"
 )
 
+type mockStore struct {
+	inserted bool
+	err      error
+}
+
+func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
+	return m.inserted, m.err
+}
+
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 	hub := realtime.NewHub()
-	service := ingest.NewService(hub)
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
 	handler := NewHandler(service)
 
 	body := []byte(`{
@@ -84,7 +96,8 @@ func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 
 func TestIngestEventRejectsInvalidJSON(t *testing.T) {
 	hub := realtime.NewHub()
-	service := ingest.NewService(hub)
+	store := &mockStore{inserted: false, err: nil}
+	service := ingest.NewService(hub, store)
 	handler := NewHandler(service)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/events", bytes.NewBufferString("{"))

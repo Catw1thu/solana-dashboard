@@ -10,6 +10,7 @@ import (
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/realtime"
+	"solana-dashboard-go/internal/store"
 	"time"
 )
 
@@ -26,7 +27,8 @@ func main() {
 	defer database.Close()
 
 	hub := realtime.NewHub()
-	service := ingest.NewService(hub)
+	serviceEventStore := store.NewServiceEventStore(database)
+	service := ingest.NewService(hub, serviceEventStore)
 	handler := httpapi.NewHandler(service)
 
 	mux := http.NewServeMux()

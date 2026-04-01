@@ -18,7 +18,8 @@ import (
 
 func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 	hub := realtime.NewHub()
-	service := ingest.NewService(hub)
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
 	handler := NewHandler(service)
 
 	mux := http.NewServeMux()

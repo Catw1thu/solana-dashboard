@@ -9,9 +9,19 @@ import (
 	"solana-dashboard-go/internal/realtime"
 )
 
+type mockStore struct {
+	inserted bool
+	err      error
+}
+
+func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
+	return m.inserted, m.err
+}
+
 func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	hub := realtime.NewHub()
-	service := NewService(hub)
+	store := &mockStore{inserted: true}
+	service := NewService(hub, store)
 	ch := hub.Subscribe(1)
 	defer hub.Unsubscribe(ch)
 

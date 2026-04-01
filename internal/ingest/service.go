@@ -8,13 +8,18 @@ import (
 	"solana-dashboard-go/internal/realtime"
 )
 
+type eventStore interface {
+	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error)
+}
 type Service struct {
-	hub *realtime.Hub
+	hub   *realtime.Hub
+	store eventStore
 }
 
-func NewService(hub *realtime.Hub) *Service {
+func NewService(hub *realtime.Hub, store eventStore) *Service {
 	return &Service{
-		hub: hub,
+		hub:   hub,
+		store: store,
 	}
 }
 
@@ -27,15 +32,20 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 	switch p := payload.(type) {
 	case events.PumpfunTradePayload:
 		log.Printf("[ingest] pumpfun trade mint=%s user=%s side=%s", p.Mint, p.User, p.Side)
-		s.hub.Publish(event)
-		return nil
 	case events.PumpAmmSwapPayload:
 		log.Printf("[ingest] pumpamm swap pool=%s user=%s side=%s", p.Pool, p.User, p.Side)
-		s.hub.Publish(event)
-		return nil
 	default:
 		return fmt.Errorf("unsupported payload type=%T", p)
 	}
+
+	inserted, err := s.store.InsertServiceEvent(ctx, &event)
+	if err != nil {
+		return fmt.Errorf("insert service event: %w", err)
+	}
+	if inserted {
+		s.hub.Publish(event)
+	}
+	return nil
 }
 
 func (s *Service) Subscribe(buffer int) chan events.Envelope {
