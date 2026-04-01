@@ -11,15 +11,22 @@ import (
 type eventStore interface {
 	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error)
 }
-type Service struct {
-	hub   *realtime.Hub
-	store eventStore
+
+type eventProjector interface {
+	Project(ctx context.Context, event *events.Envelope, payload any) error
 }
 
-func NewService(hub *realtime.Hub, store eventStore) *Service {
+type Service struct {
+	hub       *realtime.Hub
+	store     eventStore
+	projector eventProjector
+}
+
+func NewService(hub *realtime.Hub, store eventStore, projector eventProjector) *Service {
 	return &Service{
-		hub:   hub,
-		store: store,
+		hub:       hub,
+		store:     store,
+		projector: projector,
 	}
 }
 
@@ -51,6 +58,11 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 		return fmt.Errorf("insert service event: %w", err)
 	}
 	if inserted {
+		if s.projector != nil {
+			if err := s.projector.Project(ctx, &event, payload); err != nil {
+				return fmt.Errorf("project event: %w", err)
+			}
+		}
 		s.hub.Publish(event)
 	}
 	return nil

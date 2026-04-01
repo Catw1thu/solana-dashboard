@@ -16,10 +16,19 @@ import (
 	"solana-dashboard-go/internal/realtime"
 )
 
+type wsMockProjector struct {
+	err error
+}
+
+func (m *wsMockProjector) Project(ctx context.Context, event *events.Envelope, payload any) error {
+	return m.err
+}
+
 func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: true}
-	service := ingest.NewService(hub, store)
+	projector := &wsMockProjector{}
+	service := ingest.NewService(hub, store, projector)
 	handler := NewHandler(service)
 
 	mux := http.NewServeMux()

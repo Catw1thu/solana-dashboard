@@ -9,6 +9,7 @@ import (
 	"solana-dashboard-go/internal/db"
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/projector"
 	"solana-dashboard-go/internal/realtime"
 	"solana-dashboard-go/internal/store"
 	"time"
@@ -28,7 +29,10 @@ func main() {
 
 	hub := realtime.NewHub()
 	serviceEventStore := store.NewServiceEventStore(database)
-	service := ingest.NewService(hub, serviceEventStore)
+	marketStore := store.NewMarketStore(database)
+	tradeStore := store.NewTradeStore(database)
+	eventProjector := projector.New(marketStore, tradeStore)
+	service := ingest.NewService(hub, serviceEventStore, eventProjector)
 	handler := httpapi.NewHandler(service)
 
 	mux := http.NewServeMux()
