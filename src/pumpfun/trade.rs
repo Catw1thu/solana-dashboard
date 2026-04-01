@@ -3,17 +3,24 @@ use super::{
     invocation::extract_invocations,
     model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
 };
-use crate::{pumpfun::model::TradeAnalysis, transaction_view::TransactionView};
+use crate::{
+    event_origin::EventOrigin,
+    pumpfun::model::TradeAnalysis,
+    transaction_view::TransactionView,
+};
 
 pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
     analyze_trades(view).trades
 }
 
 pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
-    let mut pending_events = extract_trade_events(&view.log_messages);
+    let mut pending_events = extract_trade_events(&view.log_messages)
+        .into_iter()
+        .map(|event| (EventOrigin::Logs, event))
+        .collect::<Vec<_>>();
     for event in extract_trade_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.contains(&event) {
-            pending_events.push(event);
+        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+            pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
     let invocations = extract_invocations(view)
@@ -26,19 +33,19 @@ pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
     for invocation in invocations {
         let Some(event_index) = pending_events
             .iter()
-            .position(|event| event_matches_instruction(&invocation.instruction, event))
+            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
         else {
             unmatched_invocations.push(invocation);
             continue;
         };
-        let event = pending_events.remove(event_index);
-        trades.push(build_trade(invocation, event));
+        let (event_source, event) = pending_events.remove(event_index);
+        trades.push(build_trade(invocation, event_source, event));
     }
 
     TradeAnalysis {
         trades,
         unmatched_invocations,
-        unmatched_events: pending_events,
+        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
     }
 }
 
@@ -61,7 +68,11 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &TradeEven
         && event.user == accounts.user
 }
 
-fn build_trade(invocation: PumpfunInvocation, event: TradeEvent) -> ParsedTrade {
+fn build_trade(
+    invocation: PumpfunInvocation,
+    event_source: EventOrigin,
+    event: TradeEvent,
+) -> ParsedTrade {
     let accounts = invocation
         .instruction
         .accounts()
@@ -73,6 +84,7 @@ fn build_trade(invocation: PumpfunInvocation, event: TradeEvent) -> ParsedTrade 
 
     ParsedTrade {
         source: invocation.source.clone(),
+        event_source,
         side,
         mint: event.mint.clone(),
         user: event.user.clone(),

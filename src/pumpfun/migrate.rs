@@ -3,17 +3,20 @@ use super::{
     invocation::extract_invocations,
     model::{MigrateAnalysis, MigrateEvent, ParsedMigrate, PumpfunInstruction, PumpfunInvocation},
 };
-use crate::transaction_view::TransactionView;
+use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
 
 pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
     analyze_migrations(view).migrations
 }
 
 pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
-    let mut pending_events = extract_migrate_events(&view.log_messages);
+    let mut pending_events = extract_migrate_events(&view.log_messages)
+        .into_iter()
+        .map(|event| (EventOrigin::Logs, event))
+        .collect::<Vec<_>>();
     for event in extract_migrate_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.contains(&event) {
-            pending_events.push(event);
+        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+            pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
     let invocations = extract_invocations(view)
@@ -27,20 +30,20 @@ pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
     for invocation in invocations {
         let Some(event_index) = pending_events
             .iter()
-            .position(|event| event_matches_instruction(&invocation.instruction, event))
+            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
         else {
             unmatched_invocations.push(invocation);
             continue;
         };
 
-        let event = pending_events.remove(event_index);
-        migrations.push(build_migration(invocation, event));
+        let (event_source, event) = pending_events.remove(event_index);
+        migrations.push(build_migration(invocation, event_source, event));
     }
 
     MigrateAnalysis {
         migrations,
         unmatched_invocations,
-        unmatched_events: pending_events,
+        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
     }
 }
 
@@ -55,7 +58,11 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &MigrateEv
         && event.pool == accounts.pool
 }
 
-fn build_migration(invocation: PumpfunInvocation, event: MigrateEvent) -> ParsedMigrate {
+fn build_migration(
+    invocation: PumpfunInvocation,
+    event_source: EventOrigin,
+    event: MigrateEvent,
+) -> ParsedMigrate {
     let accounts = invocation
         .instruction
         .migrate_accounts()
@@ -63,6 +70,7 @@ fn build_migration(invocation: PumpfunInvocation, event: MigrateEvent) -> Parsed
 
     ParsedMigrate {
         source: invocation.source.clone(),
+        event_source,
         mint: event.mint.clone(),
         user: event.user.clone(),
         bonding_curve: event.bonding_curve.clone(),

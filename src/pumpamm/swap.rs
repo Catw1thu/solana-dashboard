@@ -5,17 +5,20 @@ use super::{
         ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent,
     },
 };
-use crate::transaction_view::TransactionView;
+use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
 
 pub fn extract_swaps(view: &TransactionView) -> Vec<ParsedSwap> {
     analyze_swaps(view).swaps
 }
 
 pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
-    let mut pending_events = extract_swap_events(&view.log_messages);
+    let mut pending_events = extract_swap_events(&view.log_messages)
+        .into_iter()
+        .map(|event| (EventOrigin::Logs, event))
+        .collect::<Vec<_>>();
     for event in extract_swap_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events.contains(&event) {
-            pending_events.push(event);
+        if !pending_events.iter().any(|(_, existing)| existing == &event) {
+            pending_events.push((EventOrigin::InnerCpi, event));
         }
     }
     let invocations = extract_invocations(view)
@@ -29,20 +32,20 @@ pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
     for invocation in invocations {
         let Some(event_index) = pending_events
             .iter()
-            .position(|event| event_matches_instruction(&invocation.instruction, event))
+            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
         else {
             unmatched_invocations.push(invocation);
             continue;
         };
 
-        let event = pending_events.remove(event_index);
-        swaps.push(build_swap(invocation, event));
+        let (event_source, event) = pending_events.remove(event_index);
+        swaps.push(build_swap(invocation, event_source, event));
     }
 
     SwapAnalysis {
         swaps,
         unmatched_invocations,
-        unmatched_events: pending_events,
+        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
     }
 }
 
@@ -82,7 +85,11 @@ fn event_matches_instruction(instruction: &PumpAmmInstruction, event: &SwapEvent
     }
 }
 
-fn build_swap(invocation: PumpAmmInvocation, event: SwapEvent) -> ParsedSwap {
+fn build_swap(
+    invocation: PumpAmmInvocation,
+    event_source: EventOrigin,
+    event: SwapEvent,
+) -> ParsedSwap {
     let accounts = invocation
         .instruction
         .swap_accounts()
@@ -99,6 +106,7 @@ fn build_swap(invocation: PumpAmmInvocation, event: SwapEvent) -> ParsedSwap {
 
     ParsedSwap {
         source: invocation.source.clone(),
+        event_source,
         side,
         pool: pool.clone(),
         user: user.clone(),

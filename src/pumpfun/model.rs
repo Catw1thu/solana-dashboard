@@ -1,3 +1,4 @@
+use crate::event_origin::EventOrigin;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +74,7 @@ impl PumpfunInstruction {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TradeSide {
     Buy,
     Sell,
@@ -261,6 +263,7 @@ pub struct MigrateEvent {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedTrade {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub side: TradeSide,
     pub mint: String,
     pub user: String,
@@ -294,6 +297,7 @@ pub struct ParsedTrade {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedCreate {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub mint: String,
     pub bonding_curve: String,
     pub user: String,
@@ -316,6 +320,7 @@ pub struct ParsedCreate {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedMigrate {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub mint: String,
     pub user: String,
     pub bonding_curve: String,
@@ -335,6 +340,7 @@ pub struct ParsedMigrate {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InvocationSource {
     Outer {
         outer_index: usize,

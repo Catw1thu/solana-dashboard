@@ -1,3 +1,4 @@
+use crate::event_origin::EventOrigin;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +85,7 @@ impl PumpAmmInstruction {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SwapSide {
     Buy,
     BuyExactQuoteIn,
@@ -91,6 +93,7 @@ pub enum SwapSide {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LiquidityAction {
     Deposit,
     Withdraw,
@@ -357,6 +360,7 @@ pub enum LiquidityEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InvocationSource {
     Outer { outer_index: usize },
     Inner { outer_index: usize, inner_index: usize },
@@ -378,6 +382,7 @@ pub struct PumpAmmInvocation {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedSwap {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub side: SwapSide,
     pub pool: String,
     pub user: String,
@@ -391,6 +396,7 @@ pub struct ParsedSwap {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedPoolCreation {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub pool: String,
     pub creator: String,
     pub base_mint: String,
@@ -408,6 +414,7 @@ pub struct ParsedPoolCreation {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedLiquidityAction {
     pub source: InvocationSource,
+    pub event_source: EventOrigin,
     pub action: LiquidityAction,
     pub pool: String,
     pub user: String,

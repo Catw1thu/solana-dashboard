@@ -1,7 +1,9 @@
 mod client;
 mod config;
+mod event_origin;
 mod pumpamm;
 mod pumpfun;
+mod service_event;
 mod transaction_view;
 mod writer;
 
@@ -11,6 +13,7 @@ use config::load_config;
 use futures::StreamExt;
 use pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps};
 use pumpfun::{extract_creates, extract_migrations, extract_trades};
+use service_event::collect_service_events;
 use tokio::time::{Duration, Instant};
 use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
@@ -75,6 +78,11 @@ fn persist_transaction_samples(tx: &SubscribeUpdateTransaction) -> Result<()> {
 
         for swap in extract_swaps(&view) {
             println!("Parsed pump_amm swap: {:?}", swap);
+        }
+
+        for service_event in collect_service_events(&view) {
+            let json = serde_json::to_string(&service_event)?;
+            println!("Service event: {json}");
         }
     }
 
