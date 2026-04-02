@@ -1,15 +1,17 @@
 use super::{
     model::{
-        CreatePoolEvent, LiquidityAnalysis, LiquidityEvent, ParsedLiquidityAction,
-        ParsedPoolCreation, PoolCreationAnalysis, PumpAmmInstruction, PumpAmmInvocation,
+        CreatePoolEvent, LiquidityEvent, ParsedLiquidityAction, ParsedPoolCreation,
+        PumpAmmInstruction, PumpAmmInvocation,
     },
 };
+use crate::event_origin::EventOrigin;
+#[cfg(test)]
 use crate::{
-    event_origin::EventOrigin,
     transaction_view::TransactionView,
     unified_parser::{ParsedEvent, parse_view},
 };
 
+#[cfg(test)]
 pub fn extract_pool_creations(view: &TransactionView) -> Vec<ParsedPoolCreation> {
     parse_view(view)
         .into_iter()
@@ -20,15 +22,7 @@ pub fn extract_pool_creations(view: &TransactionView) -> Vec<ParsedPoolCreation>
         .collect()
 }
 
-#[allow(dead_code)]
-pub fn analyze_pool_creations(view: &TransactionView) -> PoolCreationAnalysis {
-    PoolCreationAnalysis {
-        pool_creations: extract_pool_creations(view),
-        unmatched_invocations: Vec::new(),
-        unmatched_events: Vec::new(),
-    }
-}
-
+#[cfg(test)]
 pub fn extract_liquidity_actions(view: &TransactionView) -> Vec<ParsedLiquidityAction> {
     parse_view(view)
         .into_iter()
@@ -37,15 +31,6 @@ pub fn extract_liquidity_actions(view: &TransactionView) -> Vec<ParsedLiquidityA
             _ => None,
         })
         .collect()
-}
-
-#[allow(dead_code)]
-pub fn analyze_liquidity_actions(view: &TransactionView) -> LiquidityAnalysis {
-    LiquidityAnalysis {
-        actions: extract_liquidity_actions(view),
-        unmatched_invocations: Vec::new(),
-        unmatched_events: Vec::new(),
-    }
 }
 
 pub(crate) fn event_matches_create_pool(

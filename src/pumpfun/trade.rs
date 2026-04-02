@@ -1,12 +1,14 @@
-use super::{
-    model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeAnalysis, TradeEvent},
-};
+use super::model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent};
+#[cfg(test)]
+use super::model::TradeAnalysis;
+use crate::event_origin::EventOrigin;
+#[cfg(test)]
 use crate::{
-    event_origin::EventOrigin,
     transaction_view::TransactionView,
     unified_parser::{ParsedEvent, parse_view},
 };
 
+#[cfg(test)]
 pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
     parse_view(view)
         .into_iter()
@@ -17,6 +19,7 @@ pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
     TradeAnalysis {
         trades: extract_trades(view),

@@ -9,10 +9,11 @@ use super::{
         MigrateIx, PumpfunInstruction, SellIx, TradeAccounts,
     },
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 #[cfg(test)]
 use super::model::InstructionInput;
+#[cfg(test)]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct InstructionInputRef<'a> {
     account_pubkeys: &'a [String],

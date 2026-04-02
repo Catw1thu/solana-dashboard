@@ -1,8 +1,6 @@
 use super::model::{InvocationSource, PumpfunInvocation};
-use crate::{
-    transaction_view::{
-        InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
-    },
+use crate::transaction_view::{
+    InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
 };
 
 #[cfg(test)]

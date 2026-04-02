@@ -365,6 +365,7 @@ pub struct PumpfunInvocation {
     pub instruction: PumpfunInstruction,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize)]
 pub struct TradeAnalysis {
     pub trades: Vec<ParsedTrade>,
@@ -372,16 +373,10 @@ pub struct TradeAnalysis {
     pub unmatched_events: Vec<TradeEvent>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateAnalysis {
     pub creates: Vec<ParsedCreate>,
     pub unmatched_invocations: Vec<PumpfunInvocation>,
     pub unmatched_events: Vec<CreateEvent>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct MigrateAnalysis {
-    pub migrations: Vec<ParsedMigrate>,
-    pub unmatched_invocations: Vec<PumpfunInvocation>,
-    pub unmatched_events: Vec<MigrateEvent>,
 }

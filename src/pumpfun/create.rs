@@ -1,12 +1,14 @@
-use super::{
-    model::{CreateAnalysis, CreateEvent, ParsedCreate, PumpfunInstruction, PumpfunInvocation},
-};
+#[cfg(test)]
+use super::model::CreateAnalysis;
+use super::model::{CreateEvent, ParsedCreate, PumpfunInstruction, PumpfunInvocation};
+use crate::event_origin::EventOrigin;
+#[cfg(test)]
 use crate::{
-    event_origin::EventOrigin,
     transaction_view::TransactionView,
     unified_parser::{ParsedEvent, parse_view},
 };
 
+#[cfg(test)]
 pub fn extract_creates(view: &TransactionView) -> Vec<ParsedCreate> {
     parse_view(view)
         .into_iter()
@@ -17,6 +19,7 @@ pub fn extract_creates(view: &TransactionView) -> Vec<ParsedCreate> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn analyze_creates(view: &TransactionView) -> CreateAnalysis {
     CreateAnalysis {
         creates: extract_creates(view),
@@ -98,7 +101,6 @@ mod tests {
         pumpfun::{
             PUMPFUN_PROGRAM_ID,
             discriminators::{CREATE_V2_EVENT_DISC, CREATE_V2_IX_DISC},
-            events::extract_create_events,
             invocation::extract_invocations,
             model::{InvocationSource, PumpfunInstruction},
         },
@@ -134,9 +136,6 @@ mod tests {
             .filter(|invocation| invocation.instruction.is_create())
             .collect::<Vec<_>>();
         assert_eq!(invocations.len(), 1);
-
-        let events = extract_create_events(&view.log_messages);
-        assert_eq!(events.len(), 1);
 
         let analysis = analyze_creates(&view);
         assert_eq!(analysis.creates.len(), 1);

@@ -1,12 +1,12 @@
-use super::{
-    model::{MigrateAnalysis, MigrateEvent, ParsedMigrate, PumpfunInstruction, PumpfunInvocation},
-};
+use super::model::{MigrateEvent, ParsedMigrate, PumpfunInstruction, PumpfunInvocation};
+use crate::event_origin::EventOrigin;
+#[cfg(test)]
 use crate::{
-    event_origin::EventOrigin,
     transaction_view::TransactionView,
     unified_parser::{ParsedEvent, parse_view},
 };
 
+#[cfg(test)]
 pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
     parse_view(view)
         .into_iter()
@@ -15,15 +15,6 @@ pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
             _ => None,
         })
         .collect()
-}
-
-#[allow(dead_code)]
-pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
-    MigrateAnalysis {
-        migrations: extract_migrations(view),
-        unmatched_invocations: Vec::new(),
-        unmatched_events: Vec::new(),
-    }
 }
 
 pub(crate) fn event_matches_instruction(

@@ -1,14 +1,14 @@
-use super::{
-    model::{
-        ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent,
-    },
-};
+use super::model::{ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapEvent};
+#[cfg(test)]
+use super::model::SwapAnalysis;
+use crate::event_origin::EventOrigin;
+#[cfg(test)]
 use crate::{
-    event_origin::EventOrigin,
     transaction_view::TransactionView,
     unified_parser::{ParsedEvent, parse_view},
 };
 
+#[cfg(test)]
 pub fn extract_swaps(view: &TransactionView) -> Vec<ParsedSwap> {
     parse_view(view)
         .into_iter()
@@ -19,6 +19,7 @@ pub fn extract_swaps(view: &TransactionView) -> Vec<ParsedSwap> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
     SwapAnalysis {
         swaps: extract_swaps(view),

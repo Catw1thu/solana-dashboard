@@ -3,19 +3,8 @@ use super::{
         BUY_EVENT_DISC, CREATE_POOL_EVENT_DISC, DEPOSIT_EVENT_DISC, SELL_EVENT_DISC,
         WITHDRAW_EVENT_DISC,
     },
-    model::{
-        BuyEvent, CreatePoolEvent, DepositEvent, LiquidityEvent, SellEvent, SwapEvent,
-        WithdrawEvent,
-    },
+    model::{BuyEvent, CreatePoolEvent, DepositEvent, SellEvent, WithdrawEvent},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-
-#[derive(Default)]
-pub struct PumpAmmEventCollections {
-    pub swap_events: Vec<SwapEvent>,
-    pub pool_creation_events: Vec<CreatePoolEvent>,
-    pub liquidity_events: Vec<LiquidityEvent>,
-}
 
 struct ByteReader<'a> {
     data: &'a [u8],
@@ -267,63 +256,4 @@ pub(crate) fn parse_withdraw_event_bytes(data: &[u8]) -> Option<WithdrawEvent> {
     }
 
     Some(event)
-}
-
-#[allow(dead_code)]
-pub fn extract_swap_events(logs: &[String]) -> Vec<SwapEvent> {
-    collect_pumpamm_events(logs).swap_events
-}
-
-#[allow(dead_code)]
-pub fn extract_create_pool_events(logs: &[String]) -> Vec<CreatePoolEvent> {
-    collect_pumpamm_events(logs).pool_creation_events
-}
-
-#[allow(dead_code)]
-pub fn extract_liquidity_events(logs: &[String]) -> Vec<LiquidityEvent> {
-    collect_pumpamm_events(logs).liquidity_events
-}
-
-pub fn collect_pumpamm_events(logs: &[String]) -> PumpAmmEventCollections {
-    let mut events = PumpAmmEventCollections::default();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        collect_pumpamm_event_bytes(&bytes, &mut events);
-    }
-
-    events
-}
-
-fn collect_pumpamm_event_bytes(data: &[u8], events: &mut PumpAmmEventCollections) {
-    if let Some(event) = parse_buy_event_bytes(data) {
-        events.swap_events.push(SwapEvent::Buy(event));
-        return;
-    }
-
-    if let Some(event) = parse_sell_event_bytes(data) {
-        events.swap_events.push(SwapEvent::Sell(event));
-        return;
-    }
-
-    if let Some(event) = parse_create_pool_event_bytes(data) {
-        events.pool_creation_events.push(event);
-        return;
-    }
-
-    if let Some(event) = parse_deposit_event_bytes(data) {
-        events.liquidity_events.push(LiquidityEvent::Deposit(event));
-        return;
-    }
-
-    if let Some(event) = parse_withdraw_event_bytes(data) {
-        events.liquidity_events.push(LiquidityEvent::Withdraw(event));
-    }
 }

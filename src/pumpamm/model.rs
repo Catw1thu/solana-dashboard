@@ -424,23 +424,10 @@ pub struct ParsedLiquidityAction {
     pub event: LiquidityEvent,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize)]
 pub struct SwapAnalysis {
     pub swaps: Vec<ParsedSwap>,
     pub unmatched_invocations: Vec<PumpAmmInvocation>,
     pub unmatched_events: Vec<SwapEvent>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct PoolCreationAnalysis {
-    pub pool_creations: Vec<ParsedPoolCreation>,
-    pub unmatched_invocations: Vec<PumpAmmInvocation>,
-    pub unmatched_events: Vec<CreatePoolEvent>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LiquidityAnalysis {
-    pub actions: Vec<ParsedLiquidityAction>,
-    pub unmatched_invocations: Vec<PumpAmmInvocation>,
-    pub unmatched_events: Vec<LiquidityEvent>,
 }
