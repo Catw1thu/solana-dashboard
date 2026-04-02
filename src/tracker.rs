@@ -167,11 +167,17 @@ impl TrackedMintTracker {
             }
         }
 
-        let db_mints = self.load_from_postgres().await?;
-        if !db_mints.is_empty() {
-            self.backfill_redis(&db_mints).await?;
+        let mint_strings = self.load_tracked_mint_strings_from_postgres().await?;
+        self.tracked_mints = mint_strings
+            .iter()
+            .filter_map(|mint| MintKey::parse(mint).ok())
+            .collect();
+
+        if !mint_strings.is_empty() {
+            if let Err(err) = self.backfill_redis_strings(&mint_strings).await {
+                eprintln!("failed to backfill tracked mints into redis: {err}");
+            }
         }
-        self.tracked_mints = db_mints;
 
         Ok(())
     }
@@ -190,28 +196,12 @@ impl TrackedMintTracker {
         Ok(mints)
     }
 
-    async fn load_from_postgres(&self) -> Result<HashSet<MintKey>> {
+    async fn load_tracked_mint_strings_from_postgres(&self) -> Result<Vec<String>> {
         let rows = self.pg_client.query(LOAD_TRACKED_TOKENS_SQL, &[]).await?;
-        let mut mints = HashSet::with_capacity(rows.len());
-
-        for row in rows {
-            let mint: String = row.get("mint");
-            if let Ok(key) = MintKey::parse(&mint) {
-                mints.insert(key);
-            }
-        }
-
-        Ok(mints)
+        Ok(rows.into_iter().map(|row| row.get("mint")).collect())
     }
 
-    async fn backfill_redis(&self, mints: &HashSet<MintKey>) -> Result<()> {
-        if mints.is_empty() {
-            return Ok(());
-        }
-
-        let rows = self.pg_client.query(LOAD_TRACKED_TOKENS_SQL, &[]).await?;
-        let mint_strings: Vec<String> = rows.into_iter().map(|row| row.get("mint")).collect();
-
+    async fn backfill_redis_strings(&self, mint_strings: &[String]) -> Result<()> {
         if mint_strings.is_empty() {
             return Ok(());
         }

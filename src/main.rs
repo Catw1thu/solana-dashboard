@@ -24,6 +24,7 @@ async fn persist_transaction_samples(
     tx: &SubscribeUpdateTransaction,
     emitter: &ServiceEventEmitter,
     tracker: &mut TrackedMintTracker,
+    capture_samples: bool,
 ) -> Result<()> {
     let parse_started = Instant::now();
     let Some(info) = &tx.transaction else {
@@ -31,55 +32,88 @@ async fn persist_transaction_samples(
     };
 
     let signature = bs58::encode(&info.signature).into_string();
-    write_raw_sample(tx.slot, &signature, tx)?;
+    if capture_samples {
+        write_raw_sample(tx.slot, &signature, tx)?;
+    }
 
+    let view_started = Instant::now();
     if let Some(view) = build_transaction_view(tx) {
-        write_transaction_view_sample(&view)?;
+        let view_elapsed = view_started.elapsed();
+        if capture_samples {
+            write_transaction_view_sample(&view)?;
+        }
 
+        let collect_started = Instant::now();
         let service_events = collect_service_events(&view);
+        let collect_elapsed = collect_started.elapsed();
         let collected_event_count = service_events.len();
         let mut forwarded_event_count = 0usize;
         let mut first_forward_elapsed_ms = None;
+        let mut tracker_elapsed = Duration::ZERO;
+        let mut accept_create_elapsed = Duration::ZERO;
+        let mut should_forward_elapsed = Duration::ZERO;
+        let mut record_migration_elapsed = Duration::ZERO;
+        let mut emit_elapsed = Duration::ZERO;
 
         for service_event in service_events {
+            let tracker_started = Instant::now();
             if is_create_event(&service_event) {
+                let accept_create_started = Instant::now();
                 if let Err(err) = tracker.accept_create_event(&service_event).await {
                     eprintln!(
                         "failed to accept tracked token from create event {}: {err}",
                         service_event.event_id
                     );
                 }
+                accept_create_elapsed += accept_create_started.elapsed();
             }
 
-            if !tracker.should_forward(&service_event) {
+            let should_forward_started = Instant::now();
+            let should_forward = tracker.should_forward(&service_event);
+            should_forward_elapsed += should_forward_started.elapsed();
+
+            if !should_forward {
+                tracker_elapsed += tracker_started.elapsed();
                 continue;
             }
 
             if is_migrate_event(&service_event) {
+                let record_migration_started = Instant::now();
                 if let Err(err) = tracker.record_migration_event(&service_event).await {
                     eprintln!(
                         "failed to record migration for event {}: {err}",
                         service_event.event_id
                     );
                 }
+                record_migration_elapsed += record_migration_started.elapsed();
             }
+            tracker_elapsed += tracker_started.elapsed();
 
             if first_forward_elapsed_ms.is_none() {
                 first_forward_elapsed_ms = Some(parse_started.elapsed().as_secs_f64() * 1000.0);
             }
 
+            let emit_started = Instant::now();
             let json = serde_json::to_string(&service_event)?;
             println!("Service event: {json}");
             emitter.emit(&service_event).await?;
+            emit_elapsed += emit_started.elapsed();
             forwarded_event_count += 1;
         }
 
         if collected_event_count > 0 {
             println!(
-                "Parse timing: sig={} collected={} forwarded={} total_ms={:.3} first_forward_ms={}",
+                "Parse timing: sig={} collected={} forwarded={} view_ms={:.3} collect_ms={:.3} tracker_ms={:.3} accept_create_ms={:.3} should_forward_ms={:.3} record_migration_ms={:.3} emit_ms={:.3} total_ms={:.3} first_forward_ms={}",
                 signature,
                 collected_event_count,
                 forwarded_event_count,
+                view_elapsed.as_secs_f64() * 1000.0,
+                collect_elapsed.as_secs_f64() * 1000.0,
+                tracker_elapsed.as_secs_f64() * 1000.0,
+                accept_create_elapsed.as_secs_f64() * 1000.0,
+                should_forward_elapsed.as_secs_f64() * 1000.0,
+                record_migration_elapsed.as_secs_f64() * 1000.0,
+                emit_elapsed.as_secs_f64() * 1000.0,
                 parse_started.elapsed().as_secs_f64() * 1000.0,
                 first_forward_elapsed_ms
                     .map(|ms| format!("{ms:.3}"))
@@ -113,7 +147,13 @@ async fn main() -> Result<()> {
             let update = message?;
             match update.update_oneof {
                 Some(UpdateOneof::Transaction(tx)) => {
-                    persist_transaction_samples(&tx, &service_event_emitter, &mut tracker).await?;
+                    persist_transaction_samples(
+                        &tx,
+                        &service_event_emitter,
+                        &mut tracker,
+                        config.capture_samples,
+                    )
+                    .await?;
                 }
                 _ => {}
             }

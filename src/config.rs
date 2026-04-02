@@ -6,6 +6,7 @@ pub struct Config {
     pub service_event_ingest_url: Option<String>,
     pub database_url: String,
     pub redis_url: String,
+    pub capture_samples: bool,
 }
 
 pub fn load_config() -> Result<Config> {
@@ -19,6 +20,15 @@ pub fn load_config() -> Result<Config> {
         .filter(|value| !value.is_empty());
     let database_url = std::env::var("DATABASE_URL")?.trim().to_string();
     let redis_url = std::env::var("REDIS_URL")?.trim().to_string();
+    let capture_samples = std::env::var("CAPTURE_SAMPLES")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
 
     if grpc_endpoint.is_empty() {
         bail!("GRPC_ENDPOINT is empty");
@@ -39,5 +49,6 @@ pub fn load_config() -> Result<Config> {
         service_event_ingest_url,
         database_url,
         redis_url,
+        capture_samples,
     })
 }
