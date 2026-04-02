@@ -8,6 +8,13 @@ use super::{
 use crate::transaction_view::InnerInstructionGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+#[derive(Default)]
+pub struct PumpfunEventCollections {
+    pub trade_events: Vec<TradeEvent>,
+    pub create_events: Vec<CreateEvent>,
+    pub migrate_events: Vec<MigrateEvent>,
+}
+
 struct ByteReader<'a> {
     data: &'a [u8],
     offset: usize,
@@ -161,78 +168,37 @@ pub fn parse_migrate_event_bytes(data: &[u8]) -> Option<MigrateEvent> {
     Some(migrate_event)
 }
 
+#[allow(dead_code)]
 pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_trade_event_bytes(&bytes) {
-            events.push(event);
-        }
-    }
-
-    events
+    collect_pumpfun_events(logs).trade_events
 }
 
+#[allow(dead_code)]
 pub fn extract_trade_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<TradeEvent> {
     extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_trade_event_bytes)
 }
 
+#[allow(dead_code)]
 pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_create_event_bytes(&bytes) {
-            events.push(event);
-        }
-    }
-
-    events
+    collect_pumpfun_events(logs).create_events
 }
 
+#[allow(dead_code)]
 pub fn extract_create_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<CreateEvent> {
     extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_create_event_bytes)
 }
 
+#[allow(dead_code)]
 pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_migrate_event_bytes(&bytes) {
-            events.push(event);
-        }
-    }
-
-    events
+    collect_pumpfun_events(logs).migrate_events
 }
 
+#[allow(dead_code)]
 pub fn extract_migrate_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<MigrateEvent> {
     extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_migrate_event_bytes)
 }
 
+#[allow(dead_code)]
 fn extract_inner_program_events<T, F>(
     inner_groups: &[InnerInstructionGroup],
     program_id: &str,
@@ -260,4 +226,64 @@ where
     }
 
     events
+}
+
+pub fn collect_pumpfun_events(logs: &[String]) -> PumpfunEventCollections {
+    let mut events = PumpfunEventCollections::default();
+
+    for log in logs {
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+
+        let Ok(bytes) = STANDARD.decode(encoded) else {
+            continue;
+        };
+
+        collect_pumpfun_event_bytes(&bytes, &mut events);
+    }
+
+    events
+}
+
+#[allow(dead_code)]
+pub fn collect_pumpfun_cpi_events(
+    inner_groups: &[InnerInstructionGroup],
+) -> PumpfunEventCollections {
+    let mut events = PumpfunEventCollections::default();
+
+    for group in inner_groups {
+        for ix in &group.instructions {
+            if ix.program_id != PUMPFUN_PROGRAM_ID {
+                continue;
+            }
+
+            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
+                continue;
+            };
+
+            collect_pumpfun_event_bytes(&bytes, &mut events);
+            if bytes.len() > 8 {
+                collect_pumpfun_event_bytes(&bytes[8..], &mut events);
+            }
+        }
+    }
+
+    events
+}
+
+fn collect_pumpfun_event_bytes(data: &[u8], events: &mut PumpfunEventCollections) {
+    if let Some(event) = parse_trade_event_bytes(data) {
+        events.trade_events.push(event);
+        return;
+    }
+
+    if let Some(event) = parse_create_event_bytes(data) {
+        events.create_events.push(event);
+        return;
+    }
+
+    if let Some(event) = parse_migrate_event_bytes(data) {
+        events.migrate_events.push(event);
+    }
 }

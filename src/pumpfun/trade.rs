@@ -1,56 +1,34 @@
 use super::{
-    events::{extract_trade_cpi_events, extract_trade_events},
-    invocation::extract_invocations,
-    model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent},
+    model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeAnalysis, TradeEvent},
 };
 use crate::{
-    event_origin::EventOrigin, pumpfun::model::TradeAnalysis, transaction_view::TransactionView,
+    event_origin::EventOrigin,
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
 };
 
 pub fn extract_trades(view: &TransactionView) -> Vec<ParsedTrade> {
-    analyze_trades(view).trades
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpfunTrade(trade) => Some(trade),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn analyze_trades(view: &TransactionView) -> TradeAnalysis {
-    let mut pending_events = extract_trade_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_trade_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_trade())
-        .collect::<Vec<_>>();
-    let mut trades = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-        let (event_source, event) = pending_events.remove(event_index);
-        trades.push(build_trade(invocation, event_source, event));
-    }
-
     TradeAnalysis {
-        trades,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        trades: extract_trades(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
-fn event_matches_instruction(instruction: &PumpfunInstruction, event: &TradeEvent) -> bool {
+pub(crate) fn event_matches_instruction(
+    instruction: &PumpfunInstruction,
+    event: &TradeEvent,
+) -> bool {
     let Some(expected_ix_name) = instruction.ix_name() else {
         return false;
     };
@@ -69,7 +47,7 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &TradeEven
         && event.user == accounts.user
 }
 
-fn build_trade(
+pub(crate) fn build_trade(
     invocation: PumpfunInvocation,
     event_source: EventOrigin,
     event: TradeEvent,

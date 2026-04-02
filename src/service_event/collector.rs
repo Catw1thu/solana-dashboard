@@ -9,40 +9,28 @@ use super::{
         build_pumpfun_trade_service_event,
     },
 };
-use crate::{
-    pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps},
-    pumpfun::{extract_creates, extract_migrations, extract_trades},
-    transaction_view::TransactionView,
-};
+use crate::{transaction_view::TransactionView, unified_parser::{ParsedEvent, parse_view}};
 
 pub fn collect_service_events(view: &TransactionView) -> Vec<ServiceEventEnvelope> {
-    let mut service_events = Vec::new();
-
-    for trade in extract_trades(view) {
-        service_events.push(build_pumpfun_trade_service_event(view, &trade));
-    }
-
-    for create in extract_creates(view) {
-        service_events.push(build_pumpfun_create_service_event(view, &create));
-    }
-
-    for migration in extract_migrations(view) {
-        service_events.push(build_pumpfun_migrate_service_event(view, &migration));
-    }
-
-    for swap in extract_swaps(view) {
-        service_events.push(build_pumpamm_swap_service_event(view, &swap));
-    }
-
-    for creation in extract_pool_creations(view) {
-        service_events.push(build_pumpamm_create_pool_service_event(view, &creation));
-    }
-
-    for action in extract_liquidity_actions(view) {
-        service_events.push(build_pumpamm_liquidity_service_event(view, &action));
-    }
-
-    service_events
+    parse_view(view)
+        .into_iter()
+        .map(|event| match event {
+            ParsedEvent::PumpfunTrade(trade) => build_pumpfun_trade_service_event(view, &trade),
+            ParsedEvent::PumpfunCreate(create) => {
+                build_pumpfun_create_service_event(view, &create)
+            }
+            ParsedEvent::PumpfunMigrate(migrate) => {
+                build_pumpfun_migrate_service_event(view, &migrate)
+            }
+            ParsedEvent::PumpAmmSwap(swap) => build_pumpamm_swap_service_event(view, &swap),
+            ParsedEvent::PumpAmmCreatePool(create_pool) => {
+                build_pumpamm_create_pool_service_event(view, &create_pool)
+            }
+            ParsedEvent::PumpAmmLiquidity(liquidity) => {
+                build_pumpamm_liquidity_service_event(view, &liquidity)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -68,6 +56,10 @@ mod tests {
 
         let service_events = collect_service_events(&view);
         assert_eq!(service_events.len(), 2);
+        let first = serde_json::to_string(&service_events[0]).unwrap();
+        let second = serde_json::to_string(&service_events[1]).unwrap();
+        assert!(first.contains("\"event_type\":\"migrate\""));
+        assert!(second.contains("\"event_type\":\"create_pool\""));
         assert!(service_events.iter().any(|event| {
             serde_json::to_string(event)
                 .unwrap()

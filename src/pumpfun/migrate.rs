@@ -1,56 +1,35 @@
 use super::{
-    events::{extract_migrate_cpi_events, extract_migrate_events},
-    invocation::extract_invocations,
     model::{MigrateAnalysis, MigrateEvent, ParsedMigrate, PumpfunInstruction, PumpfunInvocation},
 };
-use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
+use crate::{
+    event_origin::EventOrigin,
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
+};
 
 pub fn extract_migrations(view: &TransactionView) -> Vec<ParsedMigrate> {
-    analyze_migrations(view).migrations
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpfunMigrate(migration) => Some(migration),
+            _ => None,
+        })
+        .collect()
 }
 
+#[allow(dead_code)]
 pub fn analyze_migrations(view: &TransactionView) -> MigrateAnalysis {
-    let mut pending_events = extract_migrate_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_migrate_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_migrate())
-        .collect::<Vec<_>>();
-
-    let mut migrations = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-
-        let (event_source, event) = pending_events.remove(event_index);
-        migrations.push(build_migration(invocation, event_source, event));
-    }
-
     MigrateAnalysis {
-        migrations,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        migrations: extract_migrations(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
-fn event_matches_instruction(instruction: &PumpfunInstruction, event: &MigrateEvent) -> bool {
+pub(crate) fn event_matches_instruction(
+    instruction: &PumpfunInstruction,
+    event: &MigrateEvent,
+) -> bool {
     let Some(accounts) = instruction.migrate_accounts() else {
         return false;
     };
@@ -61,7 +40,7 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &MigrateEv
         && event.pool == accounts.pool
 }
 
-fn build_migration(
+pub(crate) fn build_migration(
     invocation: PumpfunInvocation,
     event_source: EventOrigin,
     event: MigrateEvent,

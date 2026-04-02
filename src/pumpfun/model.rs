@@ -352,6 +352,7 @@ pub enum InvocationSource {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct InstructionInput {
     pub program_id: String,
     pub account_pubkeys: Vec<String>,

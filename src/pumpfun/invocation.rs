@@ -6,6 +6,7 @@ use crate::{
     },
 };
 
+#[allow(dead_code)]
 fn build_input_from_outer(ix: &OuterInstructionView) -> InstructionInput {
     InstructionInput {
         program_id: ix.program_id.clone(),
@@ -14,6 +15,7 @@ fn build_input_from_outer(ix: &OuterInstructionView) -> InstructionInput {
     }
 }
 
+#[allow(dead_code)]
 fn build_input_from_inner(ix: &InnerInstructionView) -> InstructionInput {
     InstructionInput {
         program_id: ix.program_id.clone(),
@@ -22,6 +24,7 @@ fn build_input_from_inner(ix: &InnerInstructionView) -> InstructionInput {
     }
 }
 
+#[allow(dead_code)]
 pub fn extract_invocations(view: &TransactionView) -> Vec<PumpfunInvocation> {
     let mut pending_inner_groups = view
         .inner_instruction_groups
@@ -51,6 +54,7 @@ pub fn extract_invocations(view: &TransactionView) -> Vec<PumpfunInvocation> {
     invocations
 }
 
+#[allow(dead_code)]
 fn collect_inner_group_invocations(
     group: &InnerInstructionGroup,
     outer_index: usize,

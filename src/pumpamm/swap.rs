@@ -1,56 +1,36 @@
 use super::{
-    events::{extract_swap_cpi_events, extract_swap_events},
-    invocation::extract_invocations,
-    model::{ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent},
+    model::{
+        ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapAnalysis, SwapEvent,
+    },
 };
-use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
+use crate::{
+    event_origin::EventOrigin,
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
+};
 
 pub fn extract_swaps(view: &TransactionView) -> Vec<ParsedSwap> {
-    analyze_swaps(view).swaps
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpAmmSwap(swap) => Some(swap),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn analyze_swaps(view: &TransactionView) -> SwapAnalysis {
-    let mut pending_events = extract_swap_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_swap_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_swap())
-        .collect::<Vec<_>>();
-
-    let mut swaps = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-
-        let (event_source, event) = pending_events.remove(event_index);
-        swaps.push(build_swap(invocation, event_source, event));
-    }
-
     SwapAnalysis {
-        swaps,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        swaps: extract_swaps(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
-fn event_matches_instruction(instruction: &PumpAmmInstruction, event: &SwapEvent) -> bool {
+pub(crate) fn event_matches_instruction(
+    instruction: &PumpAmmInstruction,
+    event: &SwapEvent,
+) -> bool {
     let Some(accounts) = instruction.swap_accounts() else {
         return false;
     };
@@ -86,7 +66,7 @@ fn event_matches_instruction(instruction: &PumpAmmInstruction, event: &SwapEvent
     }
 }
 
-fn build_swap(
+pub(crate) fn build_swap(
     invocation: PumpAmmInvocation,
     event_source: EventOrigin,
     event: SwapEvent,

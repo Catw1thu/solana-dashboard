@@ -1,107 +1,57 @@
 use super::{
-    events::{
-        extract_create_pool_cpi_events, extract_create_pool_events, extract_liquidity_cpi_events,
-        extract_liquidity_events,
-    },
-    invocation::extract_invocations,
     model::{
         CreatePoolEvent, LiquidityAnalysis, LiquidityEvent, ParsedLiquidityAction,
         ParsedPoolCreation, PoolCreationAnalysis, PumpAmmInstruction, PumpAmmInvocation,
     },
 };
-use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
+use crate::{
+    event_origin::EventOrigin,
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
+};
 
 pub fn extract_pool_creations(view: &TransactionView) -> Vec<ParsedPoolCreation> {
-    analyze_pool_creations(view).pool_creations
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpAmmCreatePool(creation) => Some(creation),
+            _ => None,
+        })
+        .collect()
 }
 
+#[allow(dead_code)]
 pub fn analyze_pool_creations(view: &TransactionView) -> PoolCreationAnalysis {
-    let mut pending_events = extract_create_pool_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_create_pool_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_create_pool())
-        .collect::<Vec<_>>();
-
-    let mut pool_creations = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_create_pool(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-
-        let (event_source, event) = pending_events.remove(event_index);
-        pool_creations.push(build_pool_creation(invocation, event_source, event));
-    }
-
     PoolCreationAnalysis {
-        pool_creations,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        pool_creations: extract_pool_creations(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
 pub fn extract_liquidity_actions(view: &TransactionView) -> Vec<ParsedLiquidityAction> {
-    analyze_liquidity_actions(view).actions
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpAmmLiquidity(action) => Some(action),
+            _ => None,
+        })
+        .collect()
 }
 
+#[allow(dead_code)]
 pub fn analyze_liquidity_actions(view: &TransactionView) -> LiquidityAnalysis {
-    let mut pending_events = extract_liquidity_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_liquidity_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_liquidity())
-        .collect::<Vec<_>>();
-
-    let mut actions = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_liquidity(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-
-        let (event_source, event) = pending_events.remove(event_index);
-        actions.push(build_liquidity_action(invocation, event_source, event));
-    }
-
     LiquidityAnalysis {
-        actions,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        actions: extract_liquidity_actions(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
-fn event_matches_create_pool(instruction: &PumpAmmInstruction, event: &CreatePoolEvent) -> bool {
+pub(crate) fn event_matches_create_pool(
+    instruction: &PumpAmmInstruction,
+    event: &CreatePoolEvent,
+) -> bool {
     let Some(accounts) = instruction.create_pool_accounts() else {
         return false;
     };
@@ -121,7 +71,10 @@ fn event_matches_create_pool(instruction: &PumpAmmInstruction, event: &CreatePoo
     }
 }
 
-fn event_matches_liquidity(instruction: &PumpAmmInstruction, event: &LiquidityEvent) -> bool {
+pub(crate) fn event_matches_liquidity(
+    instruction: &PumpAmmInstruction,
+    event: &LiquidityEvent,
+) -> bool {
     let Some(accounts) = instruction.liquidity_accounts() else {
         return false;
     };
@@ -145,7 +98,7 @@ fn event_matches_liquidity(instruction: &PumpAmmInstruction, event: &LiquidityEv
     }
 }
 
-fn build_pool_creation(
+pub(crate) fn build_pool_creation(
     invocation: PumpAmmInvocation,
     event_source: EventOrigin,
     event: CreatePoolEvent,
@@ -168,7 +121,7 @@ fn build_pool_creation(
     }
 }
 
-fn build_liquidity_action(
+pub(crate) fn build_liquidity_action(
     invocation: PumpAmmInvocation,
     event_source: EventOrigin,
     event: LiquidityEvent,

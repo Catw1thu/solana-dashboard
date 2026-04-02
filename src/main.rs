@@ -6,14 +6,13 @@ mod pumpfun;
 mod service_event;
 mod tracker;
 mod transaction_view;
+mod unified_parser;
 mod writer;
 
 use anyhow::Result;
 use client::subscribe_pump_ecosystem;
 use config::load_config;
 use futures::StreamExt;
-use pumpamm::{extract_liquidity_actions, extract_pool_creations, extract_swaps};
-use pumpfun::{extract_creates, extract_migrations, extract_trades};
 use service_event::{ServiceEventEmitter, collect_service_events};
 use tokio::time::{Duration, Instant};
 use tracker::{TrackedMintTracker, is_create_event, is_migrate_event};
@@ -62,42 +61,18 @@ async fn persist_transaction_samples(
     if let Some(view) = build_transaction_view(tx) {
         write_transaction_view_sample(&view)?;
 
-        for create in extract_creates(&view) {
-            println!("Parsed pumpfun create: {:?}", create);
-        }
-
-        for migration in extract_migrations(&view) {
-            println!("Parsed pumpfun migrate: {:?}", migration);
-        }
-
-        for trade in extract_trades(&view) {
-            println!("Parsed pumpfun trade: {:?}", trade);
-        }
-
-        for creation in extract_pool_creations(&view) {
-            println!("Parsed pump_amm create_pool: {:?}", creation);
-        }
-
-        for action in extract_liquidity_actions(&view) {
-            println!("Parsed pump_amm liquidity: {:?}", action);
-        }
-
-        for swap in extract_swaps(&view) {
-            println!("Parsed pump_amm swap: {:?}", swap);
-        }
-
         let service_events = collect_service_events(&view);
 
-        for service_event in service_events.iter().filter(|event| is_create_event(event)) {
-            if let Err(err) = tracker.accept_create_event(service_event).await {
-                eprintln!(
-                    "failed to accept tracked token from create event {}: {err}",
-                    service_event.event_id
-                );
-            }
-        }
-
         for service_event in service_events {
+            if is_create_event(&service_event) {
+                if let Err(err) = tracker.accept_create_event(&service_event).await {
+                    eprintln!(
+                        "failed to accept tracked token from create event {}: {err}",
+                        service_event.event_id
+                    );
+                }
+            }
+
             if !tracker.should_forward(&service_event) {
                 continue;
             }

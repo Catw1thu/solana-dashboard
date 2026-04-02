@@ -11,12 +11,16 @@ use super::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+struct InstructionInputRef<'a> {
+    account_pubkeys: &'a [String],
+}
+
 fn read_u64_le(data: &[u8], offset: usize) -> Option<u64> {
     let bytes: [u8; 8] = data.get(offset..offset + 8)?.try_into().ok()?;
     Some(u64::from_le_bytes(bytes))
 }
 
-fn account_at(input: &InstructionInput, index: usize) -> Option<String> {
+fn account_at(input: &InstructionInputRef<'_>, index: usize) -> Option<String> {
     input.account_pubkeys.get(index).cloned()
 }
 
@@ -69,7 +73,7 @@ impl<'a> ArgReader<'a> {
     }
 }
 
-fn parse_buy_accounts(input: &InstructionInput) -> Option<SwapAccounts> {
+fn parse_buy_accounts(input: &InstructionInputRef<'_>) -> Option<SwapAccounts> {
     Some(SwapAccounts {
         pool: account_at(input, 0)?,
         user: account_at(input, 1)?,
@@ -97,7 +101,7 @@ fn parse_buy_accounts(input: &InstructionInput) -> Option<SwapAccounts> {
     })
 }
 
-fn parse_sell_accounts(input: &InstructionInput) -> Option<SwapAccounts> {
+fn parse_sell_accounts(input: &InstructionInputRef<'_>) -> Option<SwapAccounts> {
     Some(SwapAccounts {
         pool: account_at(input, 0)?,
         user: account_at(input, 1)?,
@@ -125,7 +129,7 @@ fn parse_sell_accounts(input: &InstructionInput) -> Option<SwapAccounts> {
     })
 }
 
-fn parse_create_pool_accounts(input: &InstructionInput) -> Option<CreatePoolAccounts> {
+fn parse_create_pool_accounts(input: &InstructionInputRef<'_>) -> Option<CreatePoolAccounts> {
     Some(CreatePoolAccounts {
         pool: account_at(input, 0)?,
         global_config: account_at(input, 1)?,
@@ -148,7 +152,7 @@ fn parse_create_pool_accounts(input: &InstructionInput) -> Option<CreatePoolAcco
     })
 }
 
-fn parse_liquidity_accounts(input: &InstructionInput) -> Option<LiquidityAccounts> {
+fn parse_liquidity_accounts(input: &InstructionInputRef<'_>) -> Option<LiquidityAccounts> {
     Some(LiquidityAccounts {
         pool: account_at(input, 0)?,
         global_config: account_at(input, 1)?,
@@ -168,20 +172,32 @@ fn parse_liquidity_accounts(input: &InstructionInput) -> Option<LiquidityAccount
     })
 }
 
+#[allow(dead_code)]
 pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction> {
-    if input.program_id != PUMP_AMM_PROGRAM_ID {
+    let data = STANDARD.decode(&input.data_base64).ok()?;
+    parse_decoded_instruction(&input.program_id, &input.account_pubkeys, &data)
+}
+
+pub(crate) fn parse_decoded_instruction(
+    program_id: &str,
+    account_pubkeys: &[String],
+    data: &[u8],
+) -> Option<PumpAmmInstruction> {
+    if program_id != PUMP_AMM_PROGRAM_ID {
         return None;
     }
 
-    let data = STANDARD.decode(&input.data_base64).ok()?;
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
+    let input = InstructionInputRef {
+        account_pubkeys,
+    };
 
     match disc {
         BUY_IX_DISC => {
             let base_amount_out = read_u64_le(&data, 8)?;
             let max_quote_amount_in = read_u64_le(&data, 16)?;
             let track_volume = read_bool_flag(&data, 24);
-            let accounts = parse_buy_accounts(input)?;
+            let accounts = parse_buy_accounts(&input)?;
 
             Some(PumpAmmInstruction::Buy(BuyIx {
                 base_amount_out,
@@ -194,7 +210,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction>
             let spendable_quote_in = read_u64_le(&data, 8)?;
             let min_base_amount_out = read_u64_le(&data, 16)?;
             let track_volume = read_bool_flag(&data, 24);
-            let accounts = parse_buy_accounts(input)?;
+            let accounts = parse_buy_accounts(&input)?;
 
             Some(PumpAmmInstruction::BuyExactQuoteIn(BuyExactQuoteInIx {
                 spendable_quote_in,
@@ -206,7 +222,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction>
         SELL_IX_DISC => {
             let base_amount_in = read_u64_le(&data, 8)?;
             let min_quote_amount_out = read_u64_le(&data, 16)?;
-            let accounts = parse_sell_accounts(input)?;
+            let accounts = parse_sell_accounts(&input)?;
 
             Some(PumpAmmInstruction::Sell(SellIx {
                 base_amount_in,
@@ -222,7 +238,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction>
             let coin_creator = reader.read_pubkey()?;
             let is_mayhem_mode = reader.read_bool()?;
             let is_cashback_coin = reader.read_bool();
-            let accounts = parse_create_pool_accounts(input)?;
+            let accounts = parse_create_pool_accounts(&input)?;
 
             Some(PumpAmmInstruction::CreatePool(CreatePoolIx {
                 index,
@@ -238,7 +254,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction>
             let lp_token_amount_out = read_u64_le(&data, 8)?;
             let max_base_amount_in = read_u64_le(&data, 16)?;
             let max_quote_amount_in = read_u64_le(&data, 24)?;
-            let accounts = parse_liquidity_accounts(input)?;
+            let accounts = parse_liquidity_accounts(&input)?;
 
             Some(PumpAmmInstruction::Deposit(DepositIx {
                 lp_token_amount_out,
@@ -251,7 +267,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction>
             let lp_token_amount_in = read_u64_le(&data, 8)?;
             let min_base_amount_out = read_u64_le(&data, 16)?;
             let min_quote_amount_out = read_u64_le(&data, 24)?;
-            let accounts = parse_liquidity_accounts(input)?;
+            let accounts = parse_liquidity_accounts(&input)?;
 
             Some(PumpAmmInstruction::Withdraw(WithdrawIx {
                 lp_token_amount_in,

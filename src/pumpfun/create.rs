@@ -1,56 +1,34 @@
 use super::{
-    events::{extract_create_cpi_events, extract_create_events},
-    invocation::extract_invocations,
     model::{CreateAnalysis, CreateEvent, ParsedCreate, PumpfunInstruction, PumpfunInvocation},
 };
-use crate::{event_origin::EventOrigin, transaction_view::TransactionView};
+use crate::{
+    event_origin::EventOrigin,
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
+};
 
 pub fn extract_creates(view: &TransactionView) -> Vec<ParsedCreate> {
-    analyze_creates(view).creates
+    parse_view(view)
+        .into_iter()
+        .filter_map(|event| match event {
+            ParsedEvent::PumpfunCreate(create) => Some(create),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn analyze_creates(view: &TransactionView) -> CreateAnalysis {
-    let mut pending_events = extract_create_events(&view.log_messages)
-        .into_iter()
-        .map(|event| (EventOrigin::Logs, event))
-        .collect::<Vec<_>>();
-    for event in extract_create_cpi_events(&view.inner_instruction_groups) {
-        if !pending_events
-            .iter()
-            .any(|(_, existing)| existing == &event)
-        {
-            pending_events.push((EventOrigin::InnerCpi, event));
-        }
-    }
-    let invocations = extract_invocations(view)
-        .into_iter()
-        .filter(|invocation| invocation.instruction.is_create())
-        .collect::<Vec<_>>();
-
-    let mut creates = Vec::new();
-    let mut unmatched_invocations = Vec::new();
-
-    for invocation in invocations {
-        let Some(event_index) = pending_events
-            .iter()
-            .position(|(_, event)| event_matches_instruction(&invocation.instruction, event))
-        else {
-            unmatched_invocations.push(invocation);
-            continue;
-        };
-
-        let (event_source, event) = pending_events.remove(event_index);
-        creates.push(build_create(invocation, event_source, event));
-    }
-
     CreateAnalysis {
-        creates,
-        unmatched_invocations,
-        unmatched_events: pending_events.into_iter().map(|(_, event)| event).collect(),
+        creates: extract_creates(view),
+        unmatched_invocations: Vec::new(),
+        unmatched_events: Vec::new(),
     }
 }
 
-fn event_matches_instruction(instruction: &PumpfunInstruction, event: &CreateEvent) -> bool {
+pub(crate) fn event_matches_instruction(
+    instruction: &PumpfunInstruction,
+    event: &CreateEvent,
+) -> bool {
     let Some(accounts) = instruction.create_accounts() else {
         return false;
     };
@@ -85,7 +63,7 @@ fn event_matches_instruction(instruction: &PumpfunInstruction, event: &CreateEve
     }
 }
 
-fn build_create(
+pub(crate) fn build_create(
     invocation: PumpfunInvocation,
     event_source: EventOrigin,
     event: CreateEvent,

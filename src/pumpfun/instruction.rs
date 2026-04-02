@@ -11,6 +11,10 @@ use super::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+struct InstructionInputRef<'a> {
+    account_pubkeys: &'a [String],
+}
+
 fn read_u64_le(data: &[u8], offset: usize) -> Option<u64> {
     let bytes: [u8; 8] = data.get(offset..offset + 8)?.try_into().ok()?;
     Some(u64::from_le_bytes(bytes))
@@ -68,11 +72,11 @@ impl<'a> ArgReader<'a> {
     }
 }
 
-fn account_at(input: &InstructionInput, index: usize) -> Option<String> {
+fn account_at(input: &InstructionInputRef<'_>, index: usize) -> Option<String> {
     input.account_pubkeys.get(index).cloned()
 }
 
-fn parse_buy_accounts(input: &InstructionInput) -> Option<TradeAccounts> {
+fn parse_buy_accounts(input: &InstructionInputRef<'_>) -> Option<TradeAccounts> {
     Some(TradeAccounts {
         global: account_at(input, 0)?,
         fee_recipient: account_at(input, 1)?,
@@ -93,7 +97,7 @@ fn parse_buy_accounts(input: &InstructionInput) -> Option<TradeAccounts> {
     })
 }
 
-fn parse_sell_accounts(input: &InstructionInput) -> Option<TradeAccounts> {
+fn parse_sell_accounts(input: &InstructionInputRef<'_>) -> Option<TradeAccounts> {
     Some(TradeAccounts {
         global: account_at(input, 0)?,
         fee_recipient: account_at(input, 1)?,
@@ -114,7 +118,7 @@ fn parse_sell_accounts(input: &InstructionInput) -> Option<TradeAccounts> {
     })
 }
 
-fn parse_create_accounts(input: &InstructionInput) -> Option<CreateAccounts> {
+fn parse_create_accounts(input: &InstructionInputRef<'_>) -> Option<CreateAccounts> {
     Some(CreateAccounts {
         mint: account_at(input, 0)?,
         mint_authority: account_at(input, 1)?,
@@ -138,7 +142,7 @@ fn parse_create_accounts(input: &InstructionInput) -> Option<CreateAccounts> {
     })
 }
 
-fn parse_create_v2_accounts(input: &InstructionInput) -> Option<CreateAccounts> {
+fn parse_create_v2_accounts(input: &InstructionInputRef<'_>) -> Option<CreateAccounts> {
     Some(CreateAccounts {
         mint: account_at(input, 0)?,
         mint_authority: account_at(input, 1)?,
@@ -162,7 +166,7 @@ fn parse_create_v2_accounts(input: &InstructionInput) -> Option<CreateAccounts> 
     })
 }
 
-fn parse_migrate_accounts(input: &InstructionInput) -> Option<MigrateAccounts> {
+fn parse_migrate_accounts(input: &InstructionInputRef<'_>) -> Option<MigrateAccounts> {
     Some(MigrateAccounts {
         global: account_at(input, 0)?,
         withdraw_authority: account_at(input, 1)?,
@@ -191,20 +195,32 @@ fn parse_migrate_accounts(input: &InstructionInput) -> Option<MigrateAccounts> {
     })
 }
 
+#[allow(dead_code)]
 pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction> {
-    if input.program_id != PUMPFUN_PROGRAM_ID {
+    let data = STANDARD.decode(&input.data_base64).ok()?;
+    parse_decoded_instruction(&input.program_id, &input.account_pubkeys, &data)
+}
+
+pub(crate) fn parse_decoded_instruction(
+    program_id: &str,
+    account_pubkeys: &[String],
+    data: &[u8],
+) -> Option<PumpfunInstruction> {
+    if program_id != PUMPFUN_PROGRAM_ID {
         return None;
     }
 
-    let data = STANDARD.decode(&input.data_base64).ok()?;
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
+    let input = InstructionInputRef {
+        account_pubkeys,
+    };
 
     match disc {
         BUY_IX_DISC => {
             let amount = read_u64_le(&data, 8)?;
             let max_sol_cost = read_u64_le(&data, 16)?;
             let track_volume = read_bool_flag(&data, 24);
-            let accounts = parse_buy_accounts(input)?;
+            let accounts = parse_buy_accounts(&input)?;
 
             Some(PumpfunInstruction::Buy(BuyIx {
                 amount,
@@ -216,7 +232,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
         SELL_IX_DISC => {
             let amount = read_u64_le(&data, 8)?;
             let min_sol_output = read_u64_le(&data, 16)?;
-            let accounts = parse_sell_accounts(input)?;
+            let accounts = parse_sell_accounts(&input)?;
 
             Some(PumpfunInstruction::Sell(SellIx {
                 amount,
@@ -228,7 +244,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
             let spendable_sol_in = read_u64_le(&data, 8)?;
             let min_tokens_out = read_u64_le(&data, 16)?;
             let track_volume = read_bool_flag(&data, 24);
-            let accounts = parse_buy_accounts(input)?;
+            let accounts = parse_buy_accounts(&input)?;
 
             Some(PumpfunInstruction::BuyExactSolIn(BuyExactSolInIx {
                 spendable_sol_in,
@@ -243,7 +259,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
             let symbol = reader.read_string()?;
             let uri = reader.read_string()?;
             let creator = reader.read_pubkey()?;
-            let accounts = parse_create_accounts(input)?;
+            let accounts = parse_create_accounts(&input)?;
 
             Some(PumpfunInstruction::Create(CreateIx {
                 name,
@@ -261,7 +277,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
             let creator = reader.read_pubkey()?;
             let is_mayhem_mode = reader.read_bool()?;
             let is_cashback_enabled = reader.read_bool();
-            let accounts = parse_create_v2_accounts(input)?;
+            let accounts = parse_create_v2_accounts(&input)?;
 
             Some(PumpfunInstruction::CreateV2(CreateV2Ix {
                 name,
@@ -274,7 +290,7 @@ pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction>
             }))
         }
         MIGRATE_IX_DISC => {
-            let accounts = parse_migrate_accounts(input)?;
+            let accounts = parse_migrate_accounts(&input)?;
             Some(PumpfunInstruction::Migrate(MigrateIx { accounts }))
         }
         _ => None,

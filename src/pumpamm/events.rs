@@ -12,6 +12,13 @@ use super::{
 use crate::transaction_view::InnerInstructionGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+#[derive(Default)]
+pub struct PumpAmmEventCollections {
+    pub swap_events: Vec<SwapEvent>,
+    pub pool_creation_events: Vec<CreatePoolEvent>,
+    pub liquidity_events: Vec<LiquidityEvent>,
+}
+
 struct ByteReader<'a> {
     data: &'a [u8],
     offset: usize,
@@ -69,7 +76,7 @@ impl<'a> ByteReader<'a> {
     }
 }
 
-fn parse_buy_event_bytes(data: &[u8]) -> Option<BuyEvent> {
+pub(crate) fn parse_buy_event_bytes(data: &[u8]) -> Option<BuyEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
     if disc != BUY_EVENT_DISC {
         return None;
@@ -118,7 +125,7 @@ fn parse_buy_event_bytes(data: &[u8]) -> Option<BuyEvent> {
     Some(event)
 }
 
-fn parse_sell_event_bytes(data: &[u8]) -> Option<SellEvent> {
+pub(crate) fn parse_sell_event_bytes(data: &[u8]) -> Option<SellEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
     if disc != SELL_EVENT_DISC {
         return None;
@@ -160,7 +167,7 @@ fn parse_sell_event_bytes(data: &[u8]) -> Option<SellEvent> {
     Some(event)
 }
 
-fn parse_create_pool_event_bytes(data: &[u8]) -> Option<CreatePoolEvent> {
+pub(crate) fn parse_create_pool_event_bytes(data: &[u8]) -> Option<CreatePoolEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
     if disc != CREATE_POOL_EVENT_DISC {
         return None;
@@ -198,7 +205,7 @@ fn parse_create_pool_event_bytes(data: &[u8]) -> Option<CreatePoolEvent> {
     Some(event)
 }
 
-fn parse_deposit_event_bytes(data: &[u8]) -> Option<DepositEvent> {
+pub(crate) fn parse_deposit_event_bytes(data: &[u8]) -> Option<DepositEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
     if disc != DEPOSIT_EVENT_DISC {
         return None;
@@ -231,7 +238,7 @@ fn parse_deposit_event_bytes(data: &[u8]) -> Option<DepositEvent> {
     Some(event)
 }
 
-fn parse_withdraw_event_bytes(data: &[u8]) -> Option<WithdrawEvent> {
+pub(crate) fn parse_withdraw_event_bytes(data: &[u8]) -> Option<WithdrawEvent> {
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
     if disc != WITHDRAW_EVENT_DISC {
         return None;
@@ -264,31 +271,12 @@ fn parse_withdraw_event_bytes(data: &[u8]) -> Option<WithdrawEvent> {
     Some(event)
 }
 
+#[allow(dead_code)]
 pub fn extract_swap_events(logs: &[String]) -> Vec<SwapEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_buy_event_bytes(&bytes) {
-            events.push(SwapEvent::Buy(event));
-            continue;
-        }
-
-        if let Some(event) = parse_sell_event_bytes(&bytes) {
-            events.push(SwapEvent::Sell(event));
-        }
-    }
-
-    events
+    collect_pumpamm_events(logs).swap_events
 }
 
+#[allow(dead_code)]
 pub fn extract_swap_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<SwapEvent> {
     extract_inner_program_events(inner_groups, PUMP_AMM_PROGRAM_ID, |bytes| {
         parse_buy_event_bytes(bytes)
@@ -297,26 +285,12 @@ pub fn extract_swap_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<Sw
     })
 }
 
+#[allow(dead_code)]
 pub fn extract_create_pool_events(logs: &[String]) -> Vec<CreatePoolEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_create_pool_event_bytes(&bytes) {
-            events.push(event);
-        }
-    }
-
-    events
+    collect_pumpamm_events(logs).pool_creation_events
 }
 
+#[allow(dead_code)]
 pub fn extract_create_pool_cpi_events(
     inner_groups: &[InnerInstructionGroup],
 ) -> Vec<CreatePoolEvent> {
@@ -327,31 +301,12 @@ pub fn extract_create_pool_cpi_events(
     )
 }
 
+#[allow(dead_code)]
 pub fn extract_liquidity_events(logs: &[String]) -> Vec<LiquidityEvent> {
-    let mut events = Vec::new();
-
-    for log in logs {
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-
-        let Ok(bytes) = STANDARD.decode(encoded) else {
-            continue;
-        };
-
-        if let Some(event) = parse_deposit_event_bytes(&bytes) {
-            events.push(LiquidityEvent::Deposit(event));
-            continue;
-        }
-
-        if let Some(event) = parse_withdraw_event_bytes(&bytes) {
-            events.push(LiquidityEvent::Withdraw(event));
-        }
-    }
-
-    events
+    collect_pumpamm_events(logs).liquidity_events
 }
 
+#[allow(dead_code)]
 pub fn extract_liquidity_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<LiquidityEvent> {
     extract_inner_program_events(inner_groups, PUMP_AMM_PROGRAM_ID, |bytes| {
         parse_deposit_event_bytes(bytes)
@@ -360,6 +315,7 @@ pub fn extract_liquidity_cpi_events(inner_groups: &[InnerInstructionGroup]) -> V
     })
 }
 
+#[allow(dead_code)]
 fn extract_inner_program_events<T, F>(
     inner_groups: &[InnerInstructionGroup],
     program_id: &str,
@@ -387,4 +343,74 @@ where
     }
 
     events
+}
+
+pub fn collect_pumpamm_events(logs: &[String]) -> PumpAmmEventCollections {
+    let mut events = PumpAmmEventCollections::default();
+
+    for log in logs {
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+
+        let Ok(bytes) = STANDARD.decode(encoded) else {
+            continue;
+        };
+
+        collect_pumpamm_event_bytes(&bytes, &mut events);
+    }
+
+    events
+}
+
+#[allow(dead_code)]
+pub fn collect_pumpamm_cpi_events(
+    inner_groups: &[InnerInstructionGroup],
+) -> PumpAmmEventCollections {
+    let mut events = PumpAmmEventCollections::default();
+
+    for group in inner_groups {
+        for ix in &group.instructions {
+            if ix.program_id != PUMP_AMM_PROGRAM_ID {
+                continue;
+            }
+
+            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
+                continue;
+            };
+
+            collect_pumpamm_event_bytes(&bytes, &mut events);
+            if bytes.len() > 8 {
+                collect_pumpamm_event_bytes(&bytes[8..], &mut events);
+            }
+        }
+    }
+
+    events
+}
+
+fn collect_pumpamm_event_bytes(data: &[u8], events: &mut PumpAmmEventCollections) {
+    if let Some(event) = parse_buy_event_bytes(data) {
+        events.swap_events.push(SwapEvent::Buy(event));
+        return;
+    }
+
+    if let Some(event) = parse_sell_event_bytes(data) {
+        events.swap_events.push(SwapEvent::Sell(event));
+        return;
+    }
+
+    if let Some(event) = parse_create_pool_event_bytes(data) {
+        events.pool_creation_events.push(event);
+        return;
+    }
+
+    if let Some(event) = parse_deposit_event_bytes(data) {
+        events.liquidity_events.push(LiquidityEvent::Deposit(event));
+        return;
+    }
+
+    if let Some(event) = parse_withdraw_event_bytes(data) {
+        events.liquidity_events.push(LiquidityEvent::Withdraw(event));
+    }
 }
