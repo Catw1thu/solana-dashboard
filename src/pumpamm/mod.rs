@@ -2,7 +2,6 @@ pub mod constants;
 pub mod discriminators;
 pub mod events;
 pub mod instruction;
-pub mod invocation;
 pub mod liquidity;
 pub mod model;
 pub mod swap;

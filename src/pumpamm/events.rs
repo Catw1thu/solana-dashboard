@@ -1,5 +1,4 @@
 use super::{
-    constants::PUMP_AMM_PROGRAM_ID,
     discriminators::{
         BUY_EVENT_DISC, CREATE_POOL_EVENT_DISC, DEPOSIT_EVENT_DISC, SELL_EVENT_DISC,
         WITHDRAW_EVENT_DISC,
@@ -9,7 +8,6 @@ use super::{
         WithdrawEvent,
     },
 };
-use crate::transaction_view::InnerInstructionGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 #[derive(Default)]
@@ -277,72 +275,13 @@ pub fn extract_swap_events(logs: &[String]) -> Vec<SwapEvent> {
 }
 
 #[allow(dead_code)]
-pub fn extract_swap_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<SwapEvent> {
-    extract_inner_program_events(inner_groups, PUMP_AMM_PROGRAM_ID, |bytes| {
-        parse_buy_event_bytes(bytes)
-            .map(SwapEvent::Buy)
-            .or_else(|| parse_sell_event_bytes(bytes).map(SwapEvent::Sell))
-    })
-}
-
-#[allow(dead_code)]
 pub fn extract_create_pool_events(logs: &[String]) -> Vec<CreatePoolEvent> {
     collect_pumpamm_events(logs).pool_creation_events
 }
 
 #[allow(dead_code)]
-pub fn extract_create_pool_cpi_events(
-    inner_groups: &[InnerInstructionGroup],
-) -> Vec<CreatePoolEvent> {
-    extract_inner_program_events(
-        inner_groups,
-        PUMP_AMM_PROGRAM_ID,
-        parse_create_pool_event_bytes,
-    )
-}
-
-#[allow(dead_code)]
 pub fn extract_liquidity_events(logs: &[String]) -> Vec<LiquidityEvent> {
     collect_pumpamm_events(logs).liquidity_events
-}
-
-#[allow(dead_code)]
-pub fn extract_liquidity_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<LiquidityEvent> {
-    extract_inner_program_events(inner_groups, PUMP_AMM_PROGRAM_ID, |bytes| {
-        parse_deposit_event_bytes(bytes)
-            .map(LiquidityEvent::Deposit)
-            .or_else(|| parse_withdraw_event_bytes(bytes).map(LiquidityEvent::Withdraw))
-    })
-}
-
-#[allow(dead_code)]
-fn extract_inner_program_events<T, F>(
-    inner_groups: &[InnerInstructionGroup],
-    program_id: &str,
-    parser: F,
-) -> Vec<T>
-where
-    F: Fn(&[u8]) -> Option<T>,
-{
-    let mut events = Vec::new();
-
-    for group in inner_groups {
-        for ix in &group.instructions {
-            if ix.program_id != program_id {
-                continue;
-            }
-
-            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
-                continue;
-            };
-
-            if let Some(event) = parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser)) {
-                events.push(event);
-            }
-        }
-    }
-
-    events
 }
 
 pub fn collect_pumpamm_events(logs: &[String]) -> PumpAmmEventCollections {
@@ -358,32 +297,6 @@ pub fn collect_pumpamm_events(logs: &[String]) -> PumpAmmEventCollections {
         };
 
         collect_pumpamm_event_bytes(&bytes, &mut events);
-    }
-
-    events
-}
-
-#[allow(dead_code)]
-pub fn collect_pumpamm_cpi_events(
-    inner_groups: &[InnerInstructionGroup],
-) -> PumpAmmEventCollections {
-    let mut events = PumpAmmEventCollections::default();
-
-    for group in inner_groups {
-        for ix in &group.instructions {
-            if ix.program_id != PUMP_AMM_PROGRAM_ID {
-                continue;
-            }
-
-            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
-                continue;
-            };
-
-            collect_pumpamm_event_bytes(&bytes, &mut events);
-            if bytes.len() > 8 {
-                collect_pumpamm_event_bytes(&bytes[8..], &mut events);
-            }
-        }
     }
 
     events

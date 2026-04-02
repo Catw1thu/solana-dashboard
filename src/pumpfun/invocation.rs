@@ -1,12 +1,16 @@
-use super::model::{InstructionInput, InvocationSource, PumpfunInvocation};
+use super::model::{InvocationSource, PumpfunInvocation};
 use crate::{
-    pumpfun::instruction::parse_instruction,
     transaction_view::{
         InnerInstructionGroup, InnerInstructionView, OuterInstructionView, TransactionView,
     },
 };
 
-#[allow(dead_code)]
+#[cfg(test)]
+use super::model::InstructionInput;
+#[cfg(test)]
+use crate::pumpfun::instruction::parse_instruction;
+
+#[cfg(test)]
 fn build_input_from_outer(ix: &OuterInstructionView) -> InstructionInput {
     InstructionInput {
         program_id: ix.program_id.clone(),
@@ -15,7 +19,7 @@ fn build_input_from_outer(ix: &OuterInstructionView) -> InstructionInput {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn build_input_from_inner(ix: &InnerInstructionView) -> InstructionInput {
     InstructionInput {
         program_id: ix.program_id.clone(),
@@ -24,7 +28,7 @@ fn build_input_from_inner(ix: &InnerInstructionView) -> InstructionInput {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn extract_invocations(view: &TransactionView) -> Vec<PumpfunInvocation> {
     let mut pending_inner_groups = view
         .inner_instruction_groups
@@ -54,7 +58,7 @@ pub fn extract_invocations(view: &TransactionView) -> Vec<PumpfunInvocation> {
     invocations
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn collect_inner_group_invocations(
     group: &InnerInstructionGroup,
     outer_index: usize,

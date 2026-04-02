@@ -20,37 +20,12 @@ use transaction_view::build_transaction_view;
 use writer::{write_raw_sample, write_transaction_view_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
 
-#[allow(dead_code)]
-fn print_tx_summary(tx: &SubscribeUpdateTransaction) {
-    let Some(info) = &tx.transaction else {
-        return;
-    };
-    let Some(raw_tx) = &info.transaction else {
-        return;
-    };
-    let Some(meta) = &info.meta else {
-        return;
-    };
-    let Some(tx_message) = &raw_tx.message else {
-        return;
-    };
-
-    let signature = bs58::encode(&info.signature).into_string();
-    println!(
-        "slot={} sig={} outer_ix={} inner_groups={} logs={}",
-        tx.slot,
-        signature,
-        tx_message.instructions.len(),
-        meta.inner_instructions.len(),
-        meta.log_messages.len(),
-    );
-}
-
 async fn persist_transaction_samples(
     tx: &SubscribeUpdateTransaction,
     emitter: &ServiceEventEmitter,
     tracker: &mut TrackedMintTracker,
 ) -> Result<()> {
+    let parse_started = Instant::now();
     let Some(info) = &tx.transaction else {
         return Ok(());
     };
@@ -62,6 +37,9 @@ async fn persist_transaction_samples(
         write_transaction_view_sample(&view)?;
 
         let service_events = collect_service_events(&view);
+        let collected_event_count = service_events.len();
+        let mut forwarded_event_count = 0usize;
+        let mut first_forward_elapsed_ms = None;
 
         for service_event in service_events {
             if is_create_event(&service_event) {
@@ -86,9 +64,27 @@ async fn persist_transaction_samples(
                 }
             }
 
+            if first_forward_elapsed_ms.is_none() {
+                first_forward_elapsed_ms = Some(parse_started.elapsed().as_secs_f64() * 1000.0);
+            }
+
             let json = serde_json::to_string(&service_event)?;
             println!("Service event: {json}");
             emitter.emit(&service_event).await?;
+            forwarded_event_count += 1;
+        }
+
+        if collected_event_count > 0 {
+            println!(
+                "Parse timing: sig={} collected={} forwarded={} total_ms={:.3} first_forward_ms={}",
+                signature,
+                collected_event_count,
+                forwarded_event_count,
+                parse_started.elapsed().as_secs_f64() * 1000.0,
+                first_forward_elapsed_ms
+                    .map(|ms| format!("{ms:.3}"))
+                    .unwrap_or_else(|| "none".to_string())
+            );
         }
     }
 

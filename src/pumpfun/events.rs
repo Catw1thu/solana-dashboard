@@ -1,11 +1,9 @@
 use super::{
-    constants::PUMPFUN_PROGRAM_ID,
     discriminators::{
         CREATE_EVENT_DISC, CREATE_V2_EVENT_DISC, MIGRATE_EVENT_DISC, TRADE_EVENT_DISC,
     },
     model::{CreateEvent, MigrateEvent, TradeEvent},
 };
-use crate::transaction_view::InnerInstructionGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 #[derive(Default)]
@@ -174,58 +172,13 @@ pub fn extract_trade_events(logs: &[String]) -> Vec<TradeEvent> {
 }
 
 #[allow(dead_code)]
-pub fn extract_trade_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<TradeEvent> {
-    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_trade_event_bytes)
-}
-
-#[allow(dead_code)]
 pub fn extract_create_events(logs: &[String]) -> Vec<CreateEvent> {
     collect_pumpfun_events(logs).create_events
 }
 
 #[allow(dead_code)]
-pub fn extract_create_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<CreateEvent> {
-    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_create_event_bytes)
-}
-
-#[allow(dead_code)]
 pub fn extract_migrate_events(logs: &[String]) -> Vec<MigrateEvent> {
     collect_pumpfun_events(logs).migrate_events
-}
-
-#[allow(dead_code)]
-pub fn extract_migrate_cpi_events(inner_groups: &[InnerInstructionGroup]) -> Vec<MigrateEvent> {
-    extract_inner_program_events(inner_groups, PUMPFUN_PROGRAM_ID, parse_migrate_event_bytes)
-}
-
-#[allow(dead_code)]
-fn extract_inner_program_events<T, F>(
-    inner_groups: &[InnerInstructionGroup],
-    program_id: &str,
-    parser: F,
-) -> Vec<T>
-where
-    F: Fn(&[u8]) -> Option<T>,
-{
-    let mut events = Vec::new();
-
-    for group in inner_groups {
-        for ix in &group.instructions {
-            if ix.program_id != program_id {
-                continue;
-            }
-
-            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
-                continue;
-            };
-
-            if let Some(event) = parser(&bytes).or_else(|| bytes.get(8..).and_then(&parser)) {
-                events.push(event);
-            }
-        }
-    }
-
-    events
 }
 
 pub fn collect_pumpfun_events(logs: &[String]) -> PumpfunEventCollections {
@@ -241,32 +194,6 @@ pub fn collect_pumpfun_events(logs: &[String]) -> PumpfunEventCollections {
         };
 
         collect_pumpfun_event_bytes(&bytes, &mut events);
-    }
-
-    events
-}
-
-#[allow(dead_code)]
-pub fn collect_pumpfun_cpi_events(
-    inner_groups: &[InnerInstructionGroup],
-) -> PumpfunEventCollections {
-    let mut events = PumpfunEventCollections::default();
-
-    for group in inner_groups {
-        for ix in &group.instructions {
-            if ix.program_id != PUMPFUN_PROGRAM_ID {
-                continue;
-            }
-
-            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
-                continue;
-            };
-
-            collect_pumpfun_event_bytes(&bytes, &mut events);
-            if bytes.len() > 8 {
-                collect_pumpfun_event_bytes(&bytes[8..], &mut events);
-            }
-        }
     }
 
     events

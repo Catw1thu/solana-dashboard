@@ -5,11 +5,14 @@ use super::{
         SELL_IX_DISC,
     },
     model::{
-        BuyExactSolInIx, BuyIx, CreateAccounts, CreateIx, CreateV2Ix, InstructionInput,
-        MigrateAccounts, MigrateIx, PumpfunInstruction, SellIx, TradeAccounts,
+        BuyExactSolInIx, BuyIx, CreateAccounts, CreateIx, CreateV2Ix, MigrateAccounts,
+        MigrateIx, PumpfunInstruction, SellIx, TradeAccounts,
     },
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+#[cfg(test)]
+use super::model::InstructionInput;
 
 struct InstructionInputRef<'a> {
     account_pubkeys: &'a [String],
@@ -195,7 +198,7 @@ fn parse_migrate_accounts(input: &InstructionInputRef<'_>) -> Option<MigrateAcco
     })
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn parse_instruction(input: &InstructionInput) -> Option<PumpfunInstruction> {
     let data = STANDARD.decode(&input.data_base64).ok()?;
     parse_decoded_instruction(&input.program_id, &input.account_pubkeys, &data)

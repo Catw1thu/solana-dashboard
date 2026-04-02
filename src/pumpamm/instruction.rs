@@ -5,11 +5,10 @@ use super::{
         SELL_IX_DISC, WITHDRAW_IX_DISC,
     },
     model::{
-        BuyExactQuoteInIx, BuyIx, CreatePoolAccounts, CreatePoolIx, DepositIx, InstructionInput,
-        LiquidityAccounts, PumpAmmInstruction, SellIx, SwapAccounts, WithdrawIx,
+        BuyExactQuoteInIx, BuyIx, CreatePoolAccounts, CreatePoolIx, DepositIx, LiquidityAccounts,
+        PumpAmmInstruction, SellIx, SwapAccounts, WithdrawIx,
     },
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct InstructionInputRef<'a> {
     account_pubkeys: &'a [String],
@@ -170,12 +169,6 @@ fn parse_liquidity_accounts(input: &InstructionInputRef<'_>) -> Option<Liquidity
         event_authority: account_at(input, 13)?,
         program: account_at(input, 14)?,
     })
-}
-
-#[allow(dead_code)]
-pub fn parse_instruction(input: &InstructionInput) -> Option<PumpAmmInstruction> {
-    let data = STANDARD.decode(&input.data_base64).ok()?;
-    parse_decoded_instruction(&input.program_id, &input.account_pubkeys, &data)
 }
 
 pub(crate) fn parse_decoded_instruction(
