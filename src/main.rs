@@ -1,6 +1,7 @@
 mod client;
 mod config;
 mod event_origin;
+mod proto;
 mod pumpamm;
 mod pumpfun;
 mod service_event;
@@ -128,8 +129,7 @@ async fn persist_transaction_samples(
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = load_config()?;
-    let service_event_emitter =
-        ServiceEventEmitter::new(config.service_event_ingest_url.as_deref())?;
+    let service_event_emitter = ServiceEventEmitter::new(config.nats_url.as_deref()).await?;
     let mut tracker = TrackedMintTracker::new(&config.database_url, &config.redis_url).await?;
     let client::Subscription {
         sink: _sink,

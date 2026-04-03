@@ -1,0 +1,232 @@
+syntax = "proto3";
+
+package serviceevent.v1;
+
+option go_package = "solana-dashboard-go/internal/gen/serviceeventpb;serviceeventpb";
+
+enum Chain {
+  CHAIN_UNSPECIFIED = 0;
+  CHAIN_SOLANA = 1;
+}
+
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_PUMPFUN = 1;
+  PROTOCOL_PUMPAMM = 2;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_TRADE = 1;
+  EVENT_TYPE_CREATE = 2;
+  EVENT_TYPE_MIGRATE = 3;
+  EVENT_TYPE_SWAP = 4;
+  EVENT_TYPE_CREATE_POOL = 5;
+  EVENT_TYPE_DEPOSIT = 6;
+  EVENT_TYPE_WITHDRAW = 7;
+}
+
+enum CommitmentLevel {
+  COMMITMENT_LEVEL_UNSPECIFIED = 0;
+  COMMITMENT_LEVEL_PROCESSED = 1;
+  COMMITMENT_LEVEL_CONFIRMED = 2;
+  COMMITMENT_LEVEL_FINALIZED = 3;
+}
+
+enum InstructionSource {
+  INSTRUCTION_SOURCE_UNSPECIFIED = 0;
+  INSTRUCTION_SOURCE_OUTER = 1;
+  INSTRUCTION_SOURCE_INNER = 2;
+}
+
+enum EventOrigin {
+  EVENT_ORIGIN_UNSPECIFIED = 0;
+  EVENT_ORIGIN_LOGS = 1;
+  EVENT_ORIGIN_INNER_CPI = 2;
+}
+
+message InstructionPath {
+  InstructionSource source = 1;
+  uint32 outer_index = 2;
+  optional uint32 inner_index = 3;
+}
+
+message EventRefs {
+  optional string mint = 1;
+  optional string pool = 2;
+  optional string bonding_curve = 3;
+  optional string user = 4;
+  optional string creator = 5;
+  optional string base_mint = 6;
+  optional string quote_mint = 7;
+  optional string lp_mint = 8;
+}
+
+message PumpfunTradeInstructionArgs {
+  optional string amount = 1;
+  optional string max_sol_cost = 2;
+  optional string min_sol_output = 3;
+  optional string spendable_sol_in = 4;
+  optional string min_tokens_out = 5;
+}
+
+message PumpfunTradePayload {
+  string side = 1;
+  string ix_name = 2;
+  string mint = 3;
+  string user = 4;
+  string bonding_curve = 5;
+  string associated_bonding_curve = 6;
+  string creator = 7;
+  string creator_vault = 8;
+  string token_program = 9;
+  string sol_amount = 10;
+  string token_amount = 11;
+  string fee = 12;
+  string creator_fee = 13;
+  string virtual_sol_reserves = 14;
+  string virtual_token_reserves = 15;
+  string real_sol_reserves = 16;
+  string real_token_reserves = 17;
+  bool track_volume = 18;
+  bool mayhem_mode = 19;
+  string cashback = 20;
+  PumpfunTradeInstructionArgs instruction_args = 21;
+}
+
+message PumpfunCreatePayload {
+  string ix_name = 1;
+  string mint = 2;
+  string bonding_curve = 3;
+  string user = 4;
+  string creator = 5;
+  string name = 6;
+  string symbol = 7;
+  string uri = 8;
+  string token_program = 9;
+  string virtual_token_reserves = 10;
+  string virtual_sol_reserves = 11;
+  string real_token_reserves = 12;
+  string token_total_supply = 13;
+  bool is_mayhem_mode = 14;
+  bool is_cashback_enabled = 15;
+}
+
+message PumpfunMigratePayload {
+  string mint = 1;
+  string user = 2;
+  string bonding_curve = 3;
+  string pool = 4;
+  string mint_amount = 5;
+  string sol_amount = 6;
+  string pool_migration_fee = 7;
+  string withdraw_authority = 8;
+  string associated_bonding_curve = 9;
+  string token_program = 10;
+  string pump_amm = 11;
+  string pool_authority = 12;
+  string lp_mint = 13;
+}
+
+message PumpAmmSwapInstructionArgs {
+  optional string base_amount_in = 1;
+  optional string min_quote_amount_out = 2;
+  optional string base_amount_out = 3;
+  optional string max_quote_amount_in = 4;
+  optional string spendable_quote_in = 5;
+  optional string min_base_amount_out = 6;
+}
+
+message PumpAmmSwapPayload {
+  string side = 1;
+  string ix_name = 2;
+  string pool = 3;
+  string user = 4;
+  string base_mint = 5;
+  string quote_mint = 6;
+  string coin_creator = 7;
+  optional string base_amount_in = 8;
+  optional string base_amount_out = 9;
+  optional string quote_amount_in = 10;
+  optional string quote_amount_out = 11;
+  string lp_fee = 12;
+  string protocol_fee = 13;
+  string coin_creator_fee = 14;
+  string cashback = 15;
+  string pool_base_token_reserves = 16;
+  string pool_quote_token_reserves = 17;
+  PumpAmmSwapInstructionArgs instruction_args = 18;
+}
+
+message PumpAmmCreatePoolInstructionArgs {
+  uint32 index = 1;
+  string coin_creator = 2;
+  bool is_mayhem_mode = 3;
+  optional bool is_cashback_coin = 4;
+}
+
+message PumpAmmCreatePoolPayload {
+  string pool = 1;
+  string creator = 2;
+  string base_mint = 3;
+  string quote_mint = 4;
+  string lp_mint = 5;
+  string base_amount_in = 6;
+  string quote_amount_in = 7;
+  string initial_liquidity = 8;
+  string coin_creator = 9;
+  bool is_mayhem_mode = 10;
+  PumpAmmCreatePoolInstructionArgs instruction_args = 11;
+}
+
+message PumpAmmLiquidityInstructionArgs {
+  optional string lp_token_amount_in = 1;
+  optional string lp_token_amount_out = 2;
+  optional string max_base_amount_in = 3;
+  optional string max_quote_amount_in = 4;
+  optional string min_base_amount_out = 5;
+  optional string min_quote_amount_out = 6;
+}
+
+message PumpAmmLiquidityPayload {
+  string action = 1;
+  string pool = 2;
+  string user = 3;
+  string base_mint = 4;
+  string quote_mint = 5;
+  string lp_mint = 6;
+  optional string lp_token_amount_in = 7;
+  optional string lp_token_amount_out = 8;
+  optional string base_amount_in = 9;
+  optional string quote_amount_in = 10;
+  optional string base_amount_out = 11;
+  optional string quote_amount_out = 12;
+  string lp_mint_supply = 13;
+  PumpAmmLiquidityInstructionArgs instruction_args = 14;
+}
+
+message EventEnvelope {
+  uint32 schema_version = 1;
+  string event_id = 2;
+  Chain chain = 3;
+  Protocol protocol = 4;
+  EventType event_type = 5;
+  CommitmentLevel commitment = 6;
+  uint64 slot = 7;
+  string tx_signature = 8;
+  uint64 tx_index = 9;
+  InstructionPath instruction_path = 10;
+  EventOrigin event_source = 11;
+  int64 event_unix_ts = 12;
+  EventRefs refs = 13;
+
+  oneof payload {
+    PumpfunTradePayload pumpfun_trade = 20;
+    PumpfunCreatePayload pumpfun_create = 21;
+    PumpfunMigratePayload pumpfun_migrate = 22;
+    PumpAmmSwapPayload pumpamm_swap = 23;
+    PumpAmmCreatePoolPayload pumpamm_create_pool = 24;
+    PumpAmmLiquidityPayload pumpamm_deposit = 25;
+    PumpAmmLiquidityPayload pumpamm_withdraw = 26;
+  }
+}

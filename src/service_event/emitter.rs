@@ -1,149 +1,73 @@
-use anyhow::{Result, bail};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
+use anyhow::{Context, Result};
+use tokio::sync::mpsc;
 
-use super::model::ServiceEventEnvelope;
+use crate::service_event::{model::ServiceEventEnvelope, protobuf::encode_event};
+
+struct PublishTask {
+    event_id: String,
+    subject: String,
+    payload: Vec<u8>,
+}
 
 pub struct ServiceEventEmitter {
-    target: Option<HttpTarget>,
+    publish_tx: Option<mpsc::UnboundedSender<PublishTask>>,
 }
 
 impl ServiceEventEmitter {
-    pub fn new(raw_url: Option<&str>) -> Result<Self> {
-        let target = match raw_url {
-            Some(url) => Some(HttpTarget::parse(url)?),
-            None => None,
+    pub async fn new(raw_url: Option<&str>) -> Result<Self> {
+        let Some(url) = raw_url else {
+            return Ok(Self { publish_tx: None });
         };
 
-        Ok(Self { target })
+        let client = async_nats::connect(url)
+            .await
+            .with_context(|| format!("connect to nats at {url}"))?;
+        let jetstream = async_nats::jetstream::new(client);
+        let (publish_tx, mut publish_rx) = mpsc::unbounded_channel::<PublishTask>();
+
+        tokio::spawn(async move {
+            while let Some(task) = publish_rx.recv().await {
+                let publish = jetstream
+                    .publish(task.subject.clone(), task.payload.into())
+                    .await;
+                match publish {
+                    Ok(ack) => {
+                        if let Err(err) = ack.await {
+                            eprintln!(
+                                "failed to ack jetstream publish for {} on {}: {err}",
+                                task.event_id, task.subject
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "failed to publish service event {} to {}: {err}",
+                            task.event_id, task.subject
+                        );
+                    }
+                }
+            }
+        });
+
+        Ok(Self {
+            publish_tx: Some(publish_tx),
+        })
     }
 
     pub async fn emit(&self, event: &ServiceEventEnvelope) -> Result<()> {
-        let Some(target) = &self.target else {
+        let Some(publish_tx) = &self.publish_tx else {
             return Ok(());
         };
 
-        let body = serde_json::to_vec(event)?;
-        let mut stream = TcpStream::connect((target.host.as_str(), target.port)).await?;
-
-        let request = format!(
-            "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            target.path,
-            target.host_header(),
-            body.len()
-        );
-
-        stream.write_all(request.as_bytes()).await?;
-        stream.write_all(&body).await?;
-
-        let mut response = Vec::new();
-        stream.read_to_end(&mut response).await?;
-
-        let status = parse_status_code(&response)?;
-        if !(200..300).contains(&status) {
-            let response_text = String::from_utf8_lossy(&response);
-            bail!(
-                "service event ingest returned status {} for {}:{}{}: {}",
-                status,
-                target.host,
-                target.port,
-                target.path,
-                response_text.trim()
-            );
-        }
+        let (subject, payload) = encode_event(event)?;
+        publish_tx
+            .send(PublishTask {
+                event_id: event.event_id.clone(),
+                subject,
+                payload,
+            })
+            .map_err(|err| anyhow::anyhow!("queue nats publish task: {err}"))?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct HttpTarget {
-    host: String,
-    port: u16,
-    path: String,
-}
-
-impl HttpTarget {
-    fn parse(url: &str) -> Result<Self> {
-        let stripped = url
-            .strip_prefix("http://")
-            .ok_or_else(|| anyhow::anyhow!("only http:// URLs are supported"))?;
-
-        let (host_port, path) = match stripped.split_once('/') {
-            Some((host_port, rest)) => (host_port, format!("/{}", rest)),
-            None => (stripped, "/".to_string()),
-        };
-
-        if host_port.is_empty() {
-            bail!("ingest URL host is empty");
-        }
-
-        let (host, port) = match host_port.rsplit_once(':') {
-            Some((host, port)) if !host.is_empty() && !port.is_empty() => {
-                let port = port.parse::<u16>()?;
-                (host.to_string(), port)
-            }
-            _ => (host_port.to_string(), 80),
-        };
-
-        Ok(Self { host, port, path })
-    }
-
-    fn host_header(&self) -> String {
-        if self.port == 80 {
-            self.host.clone()
-        } else {
-            format!("{}:{}", self.host, self.port)
-        }
-    }
-}
-
-fn parse_status_code(response: &[u8]) -> Result<u16> {
-    let response = String::from_utf8_lossy(response);
-    let status_line = response
-        .lines()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing HTTP status line"))?;
-
-    let mut parts = status_line.split_whitespace();
-    let _http_version = parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing HTTP version"))?;
-    let status = parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing HTTP status code"))?;
-
-    Ok(status.parse::<u16>()?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{HttpTarget, parse_status_code};
-
-    #[test]
-    fn parses_http_target_with_explicit_port() {
-        let target = HttpTarget::parse("http://127.0.0.1:8080/internal/events").unwrap();
-        assert_eq!(target.host, "127.0.0.1");
-        assert_eq!(target.port, 8080);
-        assert_eq!(target.path, "/internal/events");
-        assert_eq!(target.host_header(), "127.0.0.1:8080");
-    }
-
-    #[test]
-    fn parses_http_target_with_default_path() {
-        let target = HttpTarget::parse("http://localhost").unwrap();
-        assert_eq!(target.host, "localhost");
-        assert_eq!(target.port, 80);
-        assert_eq!(target.path, "/");
-        assert_eq!(target.host_header(), "localhost");
-    }
-
-    #[test]
-    fn parses_http_status_code() {
-        let response = b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n";
-        let status = parse_status_code(response).unwrap();
-        assert_eq!(status, 202);
     }
 }

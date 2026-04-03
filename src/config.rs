@@ -3,7 +3,7 @@ use anyhow::{Result, bail};
 pub struct Config {
     pub grpc_endpoint: String,
     pub grpc_token: String,
-    pub service_event_ingest_url: Option<String>,
+    pub nats_url: Option<String>,
     pub database_url: String,
     pub redis_url: String,
     pub capture_samples: bool,
@@ -14,7 +14,7 @@ pub fn load_config() -> Result<Config> {
 
     let grpc_endpoint = std::env::var("GRPC_ENDPOINT")?.trim().to_string();
     let grpc_token = std::env::var("GRPC_TOKEN")?.trim().to_string();
-    let service_event_ingest_url = std::env::var("SERVICE_EVENT_INGEST_URL")
+    let nats_url = std::env::var("NATS_URL")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -46,7 +46,7 @@ pub fn load_config() -> Result<Config> {
     Ok(Config {
         grpc_endpoint,
         grpc_token,
-        service_event_ingest_url,
+        nats_url,
         database_url,
         redis_url,
         capture_samples,

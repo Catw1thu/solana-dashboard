@@ -1,6 +1,7 @@
 pub mod collector;
 pub mod emitter;
 pub mod model;
+mod protobuf;
 pub mod pumpamm;
 pub mod pumpfun;
 

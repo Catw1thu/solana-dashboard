@@ -19,3 +19,9 @@ base64 = "0.22.1"
 chrono = "0.4.39"
 redis = { version = "0.27.6", features = ["tokio-comp"] }
 tokio-postgres = "0.7.12"
+prost = "0.13.5"
+async-nats = "0.39.0"
+
+[build-dependencies]
+prost-build = "0.13.5"
+protoc-bin-vendored = "3.1.0"
