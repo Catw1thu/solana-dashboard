@@ -9,6 +9,7 @@ import (
 	"solana-dashboard-go/internal/db"
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/jetstream"
 	"solana-dashboard-go/internal/projector"
 	"solana-dashboard-go/internal/realtime"
 	"solana-dashboard-go/internal/store"
@@ -34,6 +35,15 @@ func main() {
 	eventProjector := projector.New(marketStore, tradeStore)
 	service := ingest.NewService(hub, serviceEventStore, eventProjector)
 	handler := httpapi.NewHandler(service)
+
+	if cfg.NATSURL != "" {
+		consumer := jetstream.NewConsumer(cfg.NATSURL, service)
+		go func() {
+			if err := consumer.Run(ctx); err != nil {
+				log.Fatalf("failed to run jetstream consumer: %v", err)
+			}
+		}()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)
