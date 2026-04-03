@@ -42,12 +42,13 @@ use crate::{
             MIGRATE_EVENT_DISC as PUMPFUN_MIGRATE_EVENT_DISC,
             TRADE_EVENT_DISC as PUMPFUN_TRADE_EVENT_DISC,
         },
-        events::{
-            parse_create_event_bytes, parse_migrate_event_bytes, parse_trade_event_bytes,
-        },
+        events::{parse_create_event_bytes, parse_migrate_event_bytes, parse_trade_event_bytes},
         instruction::parse_decoded_instruction as parse_pumpfun_instruction,
         migrate::{build_migration, event_matches_instruction as pumpfun_migrate_matches},
-        model::{CreateEvent, MigrateEvent, ParsedCreate, ParsedMigrate, ParsedTrade, PumpfunInvocation, TradeEvent},
+        model::{
+            CreateEvent, MigrateEvent, ParsedCreate, ParsedMigrate, ParsedTrade, PumpfunInvocation,
+            TradeEvent,
+        },
         trade::{build_trade, event_matches_instruction as pumpfun_trade_matches},
     },
     transaction_view::{
@@ -167,7 +168,10 @@ fn collect_log_events(logs: &[String], pending_events: &mut PendingEvents) {
     }
 }
 
-fn parse_outer_invocation(ix: &OuterInstructionView, outer_index: usize) -> Option<UnifiedInvocation> {
+fn parse_outer_invocation(
+    ix: &OuterInstructionView,
+    outer_index: usize,
+) -> Option<UnifiedInvocation> {
     let bytes = STANDARD.decode(&ix.data_base64).ok()?;
 
     if ix.program_id == PUMPFUN_ID {
@@ -403,7 +407,9 @@ fn collect_event_bytes(data: &[u8], origin: EventOrigin, pending_events: &mut Pe
         }
         PUMPAMM_CREATE_POOL_EVENT_DISC => {
             if let Some(event) = parse_pumpamm_create_pool_event_bytes(data) {
-                pending_events.pumpamm_create_pools.push_unique(origin, event);
+                pending_events
+                    .pumpamm_create_pools
+                    .push_unique(origin, event);
             }
         }
         PUMPAMM_DEPOSIT_EVENT_DISC => {

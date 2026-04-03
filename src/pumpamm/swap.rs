@@ -1,6 +1,6 @@
-use super::model::{ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapEvent};
 #[cfg(test)]
 use super::model::SwapAnalysis;
+use super::model::{ParsedSwap, PumpAmmInstruction, PumpAmmInvocation, SwapEvent};
 use crate::event_origin::EventOrigin;
 #[cfg(test)]
 use crate::{

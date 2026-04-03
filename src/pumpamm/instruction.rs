@@ -181,9 +181,7 @@ pub(crate) fn parse_decoded_instruction(
     }
 
     let disc: [u8; 8] = data.get(0..8)?.try_into().ok()?;
-    let input = InstructionInputRef {
-        account_pubkeys,
-    };
+    let input = InstructionInputRef { account_pubkeys };
 
     match disc {
         BUY_IX_DISC => {

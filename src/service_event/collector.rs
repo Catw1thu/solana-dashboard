@@ -9,16 +9,17 @@ use super::{
         build_pumpfun_trade_service_event,
     },
 };
-use crate::{transaction_view::TransactionView, unified_parser::{ParsedEvent, parse_view}};
+use crate::{
+    transaction_view::TransactionView,
+    unified_parser::{ParsedEvent, parse_view},
+};
 
 pub fn collect_service_events(view: &TransactionView) -> Vec<ServiceEventEnvelope> {
     parse_view(view)
         .into_iter()
         .map(|event| match event {
             ParsedEvent::PumpfunTrade(trade) => build_pumpfun_trade_service_event(view, &trade),
-            ParsedEvent::PumpfunCreate(create) => {
-                build_pumpfun_create_service_event(view, &create)
-            }
+            ParsedEvent::PumpfunCreate(create) => build_pumpfun_create_service_event(view, &create),
             ParsedEvent::PumpfunMigrate(migrate) => {
                 build_pumpfun_migrate_service_event(view, &migrate)
             }

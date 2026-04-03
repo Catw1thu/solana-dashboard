@@ -1,8 +1,6 @@
-use super::{
-    model::{
-        CreatePoolEvent, LiquidityEvent, ParsedLiquidityAction, ParsedPoolCreation,
-        PumpAmmInstruction, PumpAmmInvocation,
-    },
+use super::model::{
+    CreatePoolEvent, LiquidityEvent, ParsedLiquidityAction, ParsedPoolCreation, PumpAmmInstruction,
+    PumpAmmInvocation,
 };
 use crate::event_origin::EventOrigin;
 #[cfg(test)]

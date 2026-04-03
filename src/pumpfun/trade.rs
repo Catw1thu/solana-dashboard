@@ -1,6 +1,6 @@
-use super::model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent};
 #[cfg(test)]
 use super::model::TradeAnalysis;
+use super::model::{ParsedTrade, PumpfunInstruction, PumpfunInvocation, TradeEvent};
 use crate::event_origin::EventOrigin;
 #[cfg(test)]
 use crate::{
