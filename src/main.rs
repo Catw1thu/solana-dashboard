@@ -59,7 +59,7 @@ async fn persist_transaction_samples(
             let tracker_started = Instant::now();
             if is_create_event(&service_event) {
                 let accept_create_started = Instant::now();
-                if let Err(err) = tracker.accept_create_event(&service_event).await {
+                if let Err(err) = tracker.accept_create_event(&service_event) {
                     eprintln!(
                         "failed to accept tracked token from create event {}: {err}",
                         service_event.event_id

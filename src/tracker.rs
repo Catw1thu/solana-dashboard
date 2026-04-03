@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::{Context, Result};
 use redis::AsyncCommands;
+use tokio::sync::mpsc;
 use tokio_postgres::NoTls;
 
 use crate::service_event::model::ServiceEventEnvelope;
@@ -83,6 +84,17 @@ pub struct TrackedMintTracker {
     tracked_mints: HashSet<MintKey>,
     redis_client: redis::Client,
     pg_client: tokio_postgres::Client,
+    create_persistence_tx: mpsc::UnboundedSender<CreatePersistenceTask>,
+}
+
+#[derive(Debug)]
+struct CreatePersistenceTask {
+    mint: String,
+    creator: Option<String>,
+    bonding_curve: Option<String>,
+    token_program: Option<String>,
+    create_event_id: String,
+    accepted_at: f64,
 }
 
 impl TrackedMintTracker {
@@ -93,13 +105,27 @@ impl TrackedMintTracker {
                 eprintln!("tracked token postgres connection error: {err}");
             }
         });
+        let (worker_pg_client, worker_connection) =
+            tokio_postgres::connect(database_url, NoTls).await?;
+        tokio::spawn(async move {
+            if let Err(err) = worker_connection.await {
+                eprintln!("tracked token postgres worker connection error: {err}");
+            }
+        });
 
         let redis_client = redis::Client::open(redis_url)?;
+        let (create_persistence_tx, create_persistence_rx) = mpsc::unbounded_channel();
+        spawn_create_persistence_worker(
+            redis_client.clone(),
+            worker_pg_client,
+            create_persistence_rx,
+        );
 
         let mut tracker = Self {
             tracked_mints: HashSet::new(),
             redis_client,
             pg_client,
+            create_persistence_tx,
         };
         tracker.bootstrap().await?;
 
@@ -114,7 +140,7 @@ impl TrackedMintTracker {
         self.tracked_mints.contains(&mint)
     }
 
-    pub async fn accept_create_event(&mut self, event: &ServiceEventEnvelope) -> Result<()> {
+    pub fn accept_create_event(&mut self, event: &ServiceEventEnvelope) -> Result<()> {
         let Some(mint_str) = event.refs.mint.as_deref() else {
             return Ok(());
         };
@@ -124,8 +150,10 @@ impl TrackedMintTracker {
             return Ok(());
         }
 
-        self.write_mint_to_redis(mint_str).await?;
-        self.upsert_tracked_token(event).await?;
+        let persistence_task = CreatePersistenceTask::from_event(event)?;
+        self.create_persistence_tx
+            .send(persistence_task)
+            .map_err(|err| anyhow::anyhow!("queue create persistence task: {err}"))?;
 
         Ok(())
     }
@@ -210,49 +238,90 @@ impl TrackedMintTracker {
         let _: usize = connection.sadd(TRACKED_MINTS_KEY, mint_strings).await?;
         Ok(())
     }
+}
 
-    async fn write_mint_to_redis(&self, mint: &str) -> Result<()> {
-        let mut connection = self.redis_client.get_multiplexed_async_connection().await?;
-        let _: usize = connection.sadd(TRACKED_MINTS_KEY, mint).await?;
-        Ok(())
-    }
-
-    async fn upsert_tracked_token(&self, event: &ServiceEventEnvelope) -> Result<()> {
+impl CreatePersistenceTask {
+    fn from_event(event: &ServiceEventEnvelope) -> Result<Self> {
         let mint = event
             .refs
             .mint
-            .as_deref()
+            .clone()
             .context("create event missing mint ref")?;
-        let creator = event.refs.creator.as_deref();
-        let bonding_curve = event.refs.bonding_curve.as_deref();
-        let token_program = event
-            .payload
-            .get("token_program")
-            .and_then(|value| value.as_str());
-        let accepted_at = event.event_unix_ts as f64;
-        let current_market_id = bonding_curve;
-        let migrated_at: Option<f64> = None;
 
-        self.pg_client
-            .execute(
-                UPSERT_TRACKED_TOKEN_SQL,
-                &[
-                    &mint,
-                    &creator,
-                    &bonding_curve,
-                    &token_program,
-                    &event.event_id,
-                    &accepted_at,
-                    &STAGE_BONDING_CURVE,
-                    &MARKET_TYPE_PUMPFUN_CURVE,
-                    &current_market_id,
-                    &migrated_at,
-                ],
-            )
-            .await?;
-
-        Ok(())
+        Ok(Self {
+            mint,
+            creator: event.refs.creator.clone(),
+            bonding_curve: event.refs.bonding_curve.clone(),
+            token_program: event
+                .payload
+                .get("token_program")
+                .and_then(|value| value.as_str())
+                .map(ToOwned::to_owned),
+            create_event_id: event.event_id.clone(),
+            accepted_at: event.event_unix_ts as f64,
+        })
     }
+}
+
+fn spawn_create_persistence_worker(
+    redis_client: redis::Client,
+    pg_client: tokio_postgres::Client,
+    mut rx: mpsc::UnboundedReceiver<CreatePersistenceTask>,
+) {
+    tokio::spawn(async move {
+        while let Some(task) = rx.recv().await {
+            if let Err(err) = write_create_task_to_redis(&redis_client, &task).await {
+                eprintln!(
+                    "failed to persist tracked mint {} to redis: {err}",
+                    task.mint
+                );
+            }
+
+            if let Err(err) = upsert_create_task_to_postgres(&pg_client, &task).await {
+                eprintln!(
+                    "failed to persist tracked mint {} to postgres: {err}",
+                    task.mint
+                );
+            }
+        }
+    });
+}
+
+async fn write_create_task_to_redis(
+    redis_client: &redis::Client,
+    task: &CreatePersistenceTask,
+) -> Result<()> {
+    let mut connection = redis_client.get_multiplexed_async_connection().await?;
+    let _: usize = connection.sadd(TRACKED_MINTS_KEY, &task.mint).await?;
+    Ok(())
+}
+
+async fn upsert_create_task_to_postgres(
+    pg_client: &tokio_postgres::Client,
+    task: &CreatePersistenceTask,
+) -> Result<()> {
+    let migrated_at: Option<f64> = None;
+    let current_market_id = task.bonding_curve.as_deref();
+
+    pg_client
+        .execute(
+            UPSERT_TRACKED_TOKEN_SQL,
+            &[
+                &task.mint,
+                &task.creator.as_deref(),
+                &task.bonding_curve.as_deref(),
+                &task.token_program.as_deref(),
+                &task.create_event_id,
+                &task.accepted_at,
+                &STAGE_BONDING_CURVE,
+                &MARKET_TYPE_PUMPFUN_CURVE,
+                &current_market_id,
+                &migrated_at,
+            ],
+        )
+        .await?;
+
+    Ok(())
 }
 
 pub fn tracked_mint_from_event(event: &ServiceEventEnvelope) -> Option<MintKey> {
