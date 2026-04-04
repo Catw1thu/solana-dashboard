@@ -20,19 +20,11 @@ func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelo
 	return m.inserted, m.err
 }
 
-type mockProjector struct {
-	err error
-}
-
-func (m *mockProjector) Project(ctx context.Context, event *events.Envelope, payload any) error {
-	return m.err
-}
-
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: true}
-	projector := &mockProjector{}
-	service := ingest.NewService(hub, store, projector)
+	service := ingest.NewService(hub, store)
+	defer service.Close()
 	handler := NewHandler(service)
 
 	body := []byte(`{
@@ -106,8 +98,8 @@ func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 func TestIngestEventRejectsInvalidJSON(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: false, err: nil}
-	projector := &mockProjector{}
-	service := ingest.NewService(hub, store, projector)
+	service := ingest.NewService(hub, store)
+	defer service.Close()
 	handler := NewHandler(service)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/events", bytes.NewBufferString("{"))

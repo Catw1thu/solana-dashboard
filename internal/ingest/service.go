@@ -12,21 +12,15 @@ type eventStore interface {
 	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error)
 }
 
-type eventProjector interface {
-	Project(ctx context.Context, event *events.Envelope, payload any) error
-}
-
 type Service struct {
-	hub       *realtime.Hub
-	store     eventStore
-	projector eventProjector
+	hub   *realtime.Hub
+	store eventStore
 }
 
-func NewService(hub *realtime.Hub, store eventStore, projector eventProjector) *Service {
+func NewService(hub *realtime.Hub, store eventStore) *Service {
 	return &Service{
-		hub:       hub,
-		store:     store,
-		projector: projector,
+		hub:   hub,
+		store: store,
 	}
 }
 
@@ -69,11 +63,6 @@ func (s *Service) HandleDecodedEvent(ctx context.Context, decoded events.Decoded
 		return fmt.Errorf("insert service event: %w", err)
 	}
 	if inserted {
-		if s.projector != nil {
-			if err := s.projector.Project(ctx, &event, payload); err != nil {
-				return fmt.Errorf("project event: %w", err)
-			}
-		}
 		s.hub.Publish(event)
 	}
 	return nil
@@ -86,3 +75,5 @@ func (s *Service) Subscribe(buffer int) chan events.Envelope {
 func (s *Service) Unsubscribe(ch chan events.Envelope) {
 	s.hub.Unsubscribe(ch)
 }
+
+func (s *Service) Close() {}

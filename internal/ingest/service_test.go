@@ -18,19 +18,11 @@ func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelo
 	return m.inserted, m.err
 }
 
-type mockProjector struct {
-	err error
-}
-
-func (m *mockProjector) Project(ctx context.Context, event *events.Envelope, payload any) error {
-	return m.err
-}
-
 func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: true}
-	projector := &mockProjector{}
-	service := NewService(hub, store, projector)
+	service := NewService(hub, store)
+	defer service.Close()
 	ch := hub.Subscribe(1)
 	defer hub.Unsubscribe(ch)
 

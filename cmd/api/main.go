@@ -33,8 +33,15 @@ func main() {
 	marketStore := store.NewMarketStore(database)
 	tradeStore := store.NewTradeStore(database)
 	eventProjector := projector.New(marketStore, tradeStore)
-	service := ingest.NewService(hub, serviceEventStore, eventProjector)
+	service := ingest.NewService(hub, serviceEventStore)
 	handler := httpapi.NewHandler(service)
+	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
+
+	go func() {
+		if err := projectionRunner.Run(ctx); err != nil {
+			log.Fatalf("failed to run projector: %v", err)
+		}
+	}()
 
 	if cfg.NATSURL != "" {
 		consumer := jetstream.NewConsumer(cfg.NATSURL, service)
