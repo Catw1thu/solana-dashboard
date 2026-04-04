@@ -22,6 +22,7 @@ type mockStore struct {
 type mockEventQuery struct {
 	events []events.Envelope
 	detail query.TokenDetail
+	list   []query.TokenListItem
 	err    error
 }
 
@@ -37,6 +38,16 @@ func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint strin
 		return m.events, nil
 	}
 	return m.events[:limit], nil
+}
+
+func (m *mockEventQuery) ListTokens(ctx context.Context, limit int) ([]query.TokenListItem, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.list) <= limit {
+		return m.list, nil
+	}
+	return m.list[:limit], nil
 }
 
 func (m *mockEventQuery) ListTradesByMint(ctx context.Context, mint string, limit int) ([]storepkg.TradeRecord, error) {
@@ -259,6 +270,61 @@ func TestGetTokenDetailReturnsMintCentricPayload(t *testing.T) {
 	}
 	if len(response.Markets) != 1 {
 		t.Fatalf("expected 1 market, got %d", len(response.Markets))
+	}
+}
+
+func TestListTokensReturnsTrackedTokenList(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{
+		list: []query.TokenListItem{
+			{
+				Mint:              "mint_1",
+				CurrentStage:      "pumpamm",
+				CurrentMarketType: "pumpamm_pool",
+				CreateEvent: &query.TokenCreateSummary{
+					EventID:  "create_1",
+					Name:     "Token One",
+					Symbol:   "ONE",
+					Protocol: "pumpfun",
+				},
+			},
+			{
+				Mint:              "mint_2",
+				CurrentStage:      "pumpfun",
+				CurrentMarketType: "pumpfun_curve",
+			},
+		},
+	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens", handler.ListTokens)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens?limit=2", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Count  int                   `json:"count"`
+		Tokens []query.TokenListItem `json:"tokens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if response.Count != 2 {
+		t.Fatalf("expected count=2, got %d", response.Count)
+	}
+	if len(response.Tokens) != 2 {
+		t.Fatalf("expected 2 tokens, got %d", len(response.Tokens))
+	}
+	if response.Tokens[0].CreateEvent == nil || response.Tokens[0].CreateEvent.Symbol != "ONE" {
+		t.Fatalf("expected first token symbol ONE, got %#v", response.Tokens[0].CreateEvent)
 	}
 }
 

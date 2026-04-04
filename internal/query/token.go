@@ -13,6 +13,7 @@ const (
 	defaultDetailMarketLimit = 10
 	defaultDetailTradeLimit  = 20
 	defaultDetailEventLimit  = 20
+	defaultTokenListLimit    = 100
 )
 
 var ErrTokenNotFound = errors.New("token not found")
@@ -28,6 +29,10 @@ type tokenMarketReader interface {
 
 type tokenTradeReader interface {
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error)
+}
+
+type tokenTrackedReader interface {
+	ListTrackedTokens(ctx context.Context, limit int) ([]store.TrackedTokenRecord, error)
 }
 
 type TokenCreateSummary struct {
@@ -51,18 +56,79 @@ type TokenDetail struct {
 	RecentEvents []events.Envelope    `json:"recent_events"`
 }
 
+type TokenListItem struct {
+	Mint              string              `json:"mint"`
+	Creator           *string             `json:"creator,omitempty"`
+	BondingCurve      *string             `json:"bonding_curve,omitempty"`
+	TokenProgram      *string             `json:"token_program,omitempty"`
+	AcceptedAt        int64               `json:"accepted_at"`
+	CurrentStage      string              `json:"current_stage"`
+	CurrentMarketType string              `json:"current_market_type"`
+	CurrentMarketID   *string             `json:"current_market_id,omitempty"`
+	MigratedAt        *int64              `json:"migrated_at,omitempty"`
+	CreateEvent       *TokenCreateSummary `json:"create_event,omitempty"`
+	CurrentMarket     *store.MarketRecord `json:"current_market,omitempty"`
+	LatestTrade       *store.TradeRecord  `json:"latest_trade,omitempty"`
+}
+
 type TokenService struct {
 	events  tokenEventReader
 	markets tokenMarketReader
 	trades  tokenTradeReader
+	tracked tokenTrackedReader
 }
 
-func NewTokenService(events tokenEventReader, markets tokenMarketReader, trades tokenTradeReader) *TokenService {
+func NewTokenService(
+	events tokenEventReader,
+	markets tokenMarketReader,
+	trades tokenTradeReader,
+	tracked tokenTrackedReader,
+) *TokenService {
 	return &TokenService{
 		events:  events,
 		markets: markets,
 		trades:  trades,
+		tracked: tracked,
 	}
+}
+
+func (s *TokenService) ListTokens(ctx context.Context, limit int) ([]TokenListItem, error) {
+	if s.tracked == nil {
+		return nil, fmt.Errorf("tracked token reader not configured")
+	}
+	if limit <= 0 {
+		limit = defaultTokenListLimit
+	}
+
+	records, err := s.tracked.ListTrackedTokens(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("load tracked tokens: %w", err)
+	}
+
+	items := make([]TokenListItem, 0, len(records))
+	for _, record := range records {
+		item := TokenListItem{
+			Mint:              record.Mint,
+			Creator:           record.Creator,
+			BondingCurve:      record.BondingCurve,
+			TokenProgram:      record.TokenProgram,
+			AcceptedAt:        record.AcceptedAt,
+			CurrentStage:      record.CurrentStage,
+			CurrentMarketType: record.CurrentMarketType,
+			CurrentMarketID:   record.CurrentMarketID,
+			MigratedAt:        record.MigratedAt,
+			CurrentMarket:     record.CurrentMarket,
+			LatestTrade:       record.LatestTrade,
+		}
+
+		if summary := createSummaryFromTracked(record); summary != nil {
+			item.CreateEvent = summary
+		}
+
+		items = append(items, item)
+	}
+
+	return items, nil
 }
 
 func (s *TokenService) ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error) {
@@ -151,6 +217,32 @@ func buildCreateSummary(event events.Envelope) (*TokenCreateSummary, error) {
 	}
 }
 
+func createSummaryFromTracked(record store.TrackedTokenRecord) *TokenCreateSummary {
+	if record.CreateEventID == "" {
+		return nil
+	}
+
+	summary := &TokenCreateSummary{
+		EventID:      record.CreateEventID,
+		Creator:      record.Creator,
+		BondingCurve: record.BondingCurve,
+		Name:         stringPointerValue(record.CreateName),
+		Symbol:       stringPointerValue(record.CreateSymbol),
+		URI:          stringPointerValue(record.CreateURI),
+	}
+	if record.CreateProtocol != nil {
+		summary.Protocol = *record.CreateProtocol
+	}
+	if record.CreateEventType != nil {
+		summary.EventType = *record.CreateEventType
+	}
+	if record.CreateEventUnixTS != nil {
+		summary.EventUnixTS = *record.CreateEventUnixTS
+	}
+
+	return summary
+}
+
 func selectActiveMarket(markets []store.MarketRecord) *store.MarketRecord {
 	for _, market := range markets {
 		if market.EndedAt == nil {
@@ -164,4 +256,11 @@ func selectActiveMarket(markets []store.MarketRecord) *store.MarketRecord {
 
 	selected := markets[0]
 	return &selected
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

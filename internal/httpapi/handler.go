@@ -20,6 +20,7 @@ const (
 )
 
 type eventQuery interface {
+	ListTokens(ctx context.Context, limit int) ([]query.TokenListItem, error)
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error)
 	GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error)
@@ -125,6 +126,44 @@ func (h *Handler) ListTokenEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("failed to encode token events response for mint=%s: %v", mint, err)
+	}
+}
+
+func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.eventQuery == nil {
+		http.Error(w, "token query not configured", http.StatusInternalServerError)
+		return
+	}
+
+	limit, err := parseListLimit(r, defaultEventListLimit, maxEventListLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	items, err := h.eventQuery.ListTokens(r.Context(), limit)
+	if err != nil {
+		log.Printf("failed to list tokens: %v", err)
+		http.Error(w, "failed to list tokens", http.StatusInternalServerError)
+		return
+	}
+
+	response := struct {
+		Count  int                   `json:"count"`
+		Tokens []query.TokenListItem `json:"tokens"`
+	}{
+		Count:  len(items),
+		Tokens: items,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("failed to encode token list response: %v", err)
 	}
 }
 

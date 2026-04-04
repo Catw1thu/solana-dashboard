@@ -31,11 +31,12 @@ func main() {
 
 	hub := realtime.NewHub()
 	serviceEventStore := store.NewServiceEventStore(database)
+	trackedTokenStore := store.NewTrackedTokenStore(database)
 	marketStore := store.NewMarketStore(database)
 	tradeStore := store.NewTradeStore(database)
 	eventProjector := projector.New(marketStore, tradeStore)
 	service := ingest.NewService(hub, serviceEventStore)
-	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore)
+	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore, trackedTokenStore)
 	handler := httpapi.NewHandler(service, tokenQueries)
 	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
 
@@ -57,6 +58,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)
 	mux.HandleFunc("/internal/events", handler.IngestEvent)
+	mux.HandleFunc("GET /tokens", handler.ListTokens)
 	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
 	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
 	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)

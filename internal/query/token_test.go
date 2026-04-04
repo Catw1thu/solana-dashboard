@@ -63,6 +63,21 @@ func (m *mockTokenTradeReader) ListTradesByMint(ctx context.Context, mint string
 	return m.trades[:limit], nil
 }
 
+type mockTrackedTokenReader struct {
+	items []store.TrackedTokenRecord
+	err   error
+}
+
+func (m *mockTrackedTokenReader) ListTrackedTokens(ctx context.Context, limit int) ([]store.TrackedTokenRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.items) <= limit {
+		return m.items, nil
+	}
+	return m.items[:limit], nil
+}
+
 func TestGetTokenDetailBuildsMintCentricResponse(t *testing.T) {
 	mint := "mint_1"
 	creator := "creator_1"
@@ -114,6 +129,7 @@ func TestGetTokenDetailBuildsMintCentricResponse(t *testing.T) {
 				{EventID: "trade_1", Mint: mint, MarketID: "pool_1", Protocol: "pumpamm", Side: "buy", TokenAmount: "100", QuoteAmount: "2"},
 			},
 		},
+		nil,
 	)
 
 	detail, err := service.GetTokenDetail(context.Background(), mint)
@@ -148,11 +164,89 @@ func TestGetTokenDetailReturnsNotFoundWhenMintHasNoData(t *testing.T) {
 		&mockTokenEventReader{},
 		&mockTokenMarketReader{},
 		&mockTokenTradeReader{},
+		nil,
 	)
 
 	_, err := service.GetTokenDetail(context.Background(), "missing_mint")
 	if !errors.Is(err, ErrTokenNotFound) {
 		t.Fatalf("expected ErrTokenNotFound, got %v", err)
+	}
+}
+
+func TestListTokensBuildsTrackedTokenList(t *testing.T) {
+	mint := "mint_1"
+	creator := "creator_1"
+	bondingCurve := "curve_1"
+	tokenProgram := "token_program_1"
+	currentMarketID := "pool_1"
+	createProtocol := "pumpfun"
+	createEventType := "create"
+	createName := "Token One"
+	createSymbol := "ONE"
+	createURI := "https://example.com/one.json"
+	createEventUnixTS := int64(1770000000)
+
+	service := NewTokenService(
+		nil,
+		nil,
+		nil,
+		&mockTrackedTokenReader{
+			items: []store.TrackedTokenRecord{
+				{
+					Mint:              mint,
+					Creator:           &creator,
+					BondingCurve:      &bondingCurve,
+					TokenProgram:      &tokenProgram,
+					CreateEventID:     "create_1",
+					AcceptedAt:        1770000001,
+					CurrentStage:      "pumpamm",
+					CurrentMarketType: "pumpamm_pool",
+					CurrentMarketID:   &currentMarketID,
+					CreateProtocol:    &createProtocol,
+					CreateEventType:   &createEventType,
+					CreateEventUnixTS: &createEventUnixTS,
+					CreateName:        &createName,
+					CreateSymbol:      &createSymbol,
+					CreateURI:         &createURI,
+					CurrentMarket: &store.MarketRecord{
+						MarketID:   currentMarketID,
+						Mint:       mint,
+						Protocol:   "pumpamm",
+						MarketType: "pumpamm_pool",
+						StartedAt:  1770000100,
+					},
+					LatestTrade: &store.TradeRecord{
+						EventID:     "trade_1",
+						Mint:        mint,
+						MarketID:    currentMarketID,
+						Protocol:    "pumpamm",
+						Side:        "buy",
+						TokenAmount: "100",
+						QuoteAmount: "2",
+					},
+				},
+			},
+		},
+	)
+
+	items, err := service.ListTokens(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListTokens returned error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Mint != mint {
+		t.Fatalf("expected mint=%s, got %s", mint, items[0].Mint)
+	}
+	if items[0].CreateEvent == nil || items[0].CreateEvent.Symbol != "ONE" {
+		t.Fatalf("expected create summary with symbol ONE, got %#v", items[0].CreateEvent)
+	}
+	if items[0].CurrentMarket == nil || items[0].CurrentMarket.MarketID != currentMarketID {
+		t.Fatalf("expected current market pool_1, got %#v", items[0].CurrentMarket)
+	}
+	if items[0].LatestTrade == nil || items[0].LatestTrade.EventID != "trade_1" {
+		t.Fatalf("expected latest trade trade_1, got %#v", items[0].LatestTrade)
 	}
 }
 
