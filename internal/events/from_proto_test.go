@@ -102,3 +102,76 @@ func TestEnvelopeFromProtoPumpfunTrade(t *testing.T) {
 		t.Fatalf("expected amount=%s, got %#v", amount, trade.InstructionArgs.Amount)
 	}
 }
+
+func TestDecodedEnvelopeFromProtoPumpfunTrade(t *testing.T) {
+	innerIndex := uint32(7)
+	amount := "1000"
+	maxSolCost := "2000"
+
+	protoEvent := &serviceeventpb.EventEnvelope{
+		SchemaVersion: 1,
+		EventId:       "solana:pumpfun:trade:testsig:inner:3:7",
+		Chain:         serviceeventpb.Chain_CHAIN_SOLANA,
+		Protocol:      serviceeventpb.Protocol_PROTOCOL_PUMPFUN,
+		EventType:     serviceeventpb.EventType_EVENT_TYPE_TRADE,
+		Commitment:    serviceeventpb.CommitmentLevel_COMMITMENT_LEVEL_PROCESSED,
+		Slot:          42,
+		TxSignature:   "testsig",
+		TxIndex:       2,
+		InstructionPath: &serviceeventpb.InstructionPath{
+			Source:     serviceeventpb.InstructionSource_INSTRUCTION_SOURCE_INNER,
+			OuterIndex: 3,
+			InnerIndex: &innerIndex,
+		},
+		EventSource: serviceeventpb.EventOrigin_EVENT_ORIGIN_LOGS,
+		EventUnixTs: 1_700_000_000,
+		Payload: &serviceeventpb.EventEnvelope_PumpfunTrade{
+			PumpfunTrade: &serviceeventpb.PumpfunTradePayload{
+				Side:                   "buy",
+				IxName:                 "buy",
+				Mint:                   "mint_1",
+				User:                   "user_1",
+				BondingCurve:           "curve_1",
+				AssociatedBondingCurve: "assoc_curve_1",
+				Creator:                "creator_1",
+				CreatorVault:           "vault_1",
+				TokenProgram:           "token_program_1",
+				SolAmount:              "100",
+				TokenAmount:            "200",
+				Fee:                    "1",
+				CreatorFee:             "2",
+				VirtualSolReserves:     "300",
+				VirtualTokenReserves:   "400",
+				RealSolReserves:        "500",
+				RealTokenReserves:      "600",
+				TrackVolume:            true,
+				MayhemMode:             false,
+				Cashback:               "0",
+				InstructionArgs: &serviceeventpb.PumpfunTradeInstructionArgs{
+					Amount:     &amount,
+					MaxSolCost: &maxSolCost,
+				},
+			},
+		},
+	}
+
+	decoded, err := DecodedEnvelopeFromProto(protoEvent)
+	if err != nil {
+		t.Fatalf("DecodedEnvelopeFromProto returned error: %v", err)
+	}
+
+	if decoded.Envelope.EventID != protoEvent.GetEventId() {
+		t.Fatalf("expected event_id=%s, got %s", protoEvent.GetEventId(), decoded.Envelope.EventID)
+	}
+
+	trade, ok := decoded.Payload.(PumpfunTradePayload)
+	if !ok {
+		t.Fatalf("expected PumpfunTradePayload, got %T", decoded.Payload)
+	}
+	if trade.InstructionArgs.Amount == nil || *trade.InstructionArgs.Amount != amount {
+		t.Fatalf("expected amount=%s, got %#v", amount, trade.InstructionArgs.Amount)
+	}
+	if trade.InstructionArgs.MaxSolCost == nil || *trade.InstructionArgs.MaxSolCost != maxSolCost {
+		t.Fatalf("expected max_sol_cost=%s, got %#v", maxSolCost, trade.InstructionArgs.MaxSolCost)
+	}
+}

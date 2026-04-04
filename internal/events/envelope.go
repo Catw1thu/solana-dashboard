@@ -19,6 +19,30 @@ type Envelope struct {
 	Payload         json.RawMessage `json:"payload"`
 }
 
+type DecodedEnvelope struct {
+	Envelope Envelope
+	Payload  any
+}
+
+func (d DecodedEnvelope) EnvelopeWithPayload() (Envelope, error) {
+	envelope := d.Envelope
+	if len(envelope.Payload) > 0 {
+		return envelope, nil
+	}
+
+	if d.Payload == nil {
+		return envelope, nil
+	}
+
+	payloadJSON, err := json.Marshal(d.Payload)
+	if err != nil {
+		return Envelope{}, err
+	}
+	envelope.Payload = payloadJSON
+
+	return envelope, nil
+}
+
 type InstructionPath struct {
 	Source     string `json:"source"`
 	OuterIndex int    `json:"outer_index"`

@@ -31,10 +31,16 @@ func NewService(hub *realtime.Hub, store eventStore, projector eventProjector) *
 }
 
 func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error {
-	payload, err := events.DecodePayload(event)
+	decoded, err := events.DecodeEnvelope(event)
 	if err != nil {
 		return fmt.Errorf("decode payload: %w", err)
 	}
+
+	return s.HandleDecodedEvent(ctx, decoded)
+}
+
+func (s *Service) HandleDecodedEvent(ctx context.Context, decoded events.DecodedEnvelope) error {
+	payload := decoded.Payload
 
 	switch p := payload.(type) {
 	case events.PumpfunTradePayload:
@@ -51,6 +57,11 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 		log.Printf("[ingest] pumpamm liquidity action=%s pool=%s user=%s", p.Action, p.Pool, p.User)
 	default:
 		return fmt.Errorf("unsupported payload type=%T", p)
+	}
+
+	event, err := decoded.EnvelopeWithPayload()
+	if err != nil {
+		return fmt.Errorf("encode payload: %w", err)
 	}
 
 	inserted, err := s.store.InsertServiceEvent(ctx, &event)

@@ -119,13 +119,13 @@ func (c *Consumer) handleMessage(ctx context.Context, message *nats.Msg) error {
 		return fmt.Errorf("unmarshal protobuf event: %w", err)
 	}
 
-	event, err := events.EnvelopeFromProto(&protoEvent)
+	decoded, err := events.DecodedEnvelopeFromProto(&protoEvent)
 	if err != nil {
 		return fmt.Errorf("convert protobuf event: %w", err)
 	}
 
-	if err := c.service.HandleEvent(ctx, event); err != nil {
-		return fmt.Errorf("handle event %s: %w", event.EventID, err)
+	if err := c.service.HandleDecodedEvent(ctx, decoded); err != nil {
+		return fmt.Errorf("handle event %s: %w", decoded.Envelope.EventID, err)
 	}
 
 	return nil
