@@ -3,6 +3,9 @@ use tokio::sync::mpsc;
 
 use crate::service_event::{model::ServiceEventEnvelope, protobuf::encode_event};
 
+const STREAM_NAME: &str = "SERVICE_EVENTS";
+const STREAM_SUBJECT: &str = "solana.tracked.>";
+
 struct PublishTask {
     event_id: String,
     subject: String,
@@ -23,6 +26,14 @@ impl ServiceEventEmitter {
             .await
             .with_context(|| format!("connect to nats at {url}"))?;
         let jetstream = async_nats::jetstream::new(client);
+        jetstream
+            .get_or_create_stream(async_nats::jetstream::stream::Config {
+                name: STREAM_NAME.to_string(),
+                subjects: vec![STREAM_SUBJECT.to_string()],
+                ..Default::default()
+            })
+            .await
+            .context("ensure jetstream stream")?;
         let (publish_tx, mut publish_rx) = mpsc::unbounded_channel::<PublishTask>();
 
         tokio::spawn(async move {
