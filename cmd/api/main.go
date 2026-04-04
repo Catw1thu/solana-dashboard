@@ -11,6 +11,7 @@ import (
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/jetstream"
 	"solana-dashboard-go/internal/projector"
+	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
 	"solana-dashboard-go/internal/store"
 	"time"
@@ -34,7 +35,8 @@ func main() {
 	tradeStore := store.NewTradeStore(database)
 	eventProjector := projector.New(marketStore, tradeStore)
 	service := ingest.NewService(hub, serviceEventStore)
-	handler := httpapi.NewHandler(service, serviceEventStore)
+	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore)
+	handler := httpapi.NewHandler(service, tokenQueries)
 	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
 
 	go func() {
@@ -55,7 +57,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)
 	mux.HandleFunc("/internal/events", handler.IngestEvent)
+	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
 	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
+	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)
 	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{

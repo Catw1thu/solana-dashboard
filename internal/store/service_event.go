@@ -118,6 +118,32 @@ order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
 limit $2
 `
 
+const listLatestCreateEventByMintSQL = `
+select
+    event_id,
+    schema_version,
+    chain,
+    protocol,
+    event_type,
+    commitment,
+    slot,
+    tx_signature,
+    tx_index,
+    instruction_source,
+    outer_index,
+    inner_index,
+    event_source,
+    event_unix_ts,
+    refs,
+    payload,
+    created_at
+from service_events
+where refs->>'mint' = $1
+  and event_type = 'create'
+order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+limit 1
+`
+
 const saveProjectionCheckpointSQL = `
 insert into projection_checkpoints (projector_name, last_log_id, updated_at)
 values ($1, $2, now())
@@ -322,6 +348,28 @@ func (s *ServiceEventStore) ListServiceEventsByPool(
 	}
 
 	return eventsList, nil
+}
+
+func (s *ServiceEventStore) FindLatestCreateEventByMint(
+	ctx context.Context,
+	mint string,
+) (*events.Envelope, error) {
+	rows, err := s.db.Pool.Query(ctx, listLatestCreateEventByMintSQL, mint)
+	if err != nil {
+		return nil, fmt.Errorf("query latest create event by mint=%s: %w", mint, err)
+	}
+	defer rows.Close()
+
+	entries, err := scanServiceEvents(rows, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	event := entries[0].Event
+	return &event, nil
 }
 
 func scanServiceEvents(rows pgx.Rows, limit int) ([]ServiceEventLogEntry, error) {

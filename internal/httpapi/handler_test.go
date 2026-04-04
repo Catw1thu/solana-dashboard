@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
+	storepkg "solana-dashboard-go/internal/store"
 	"testing"
 )
 
@@ -19,6 +21,7 @@ type mockStore struct {
 
 type mockEventQuery struct {
 	events []events.Envelope
+	detail query.TokenDetail
 	err    error
 }
 
@@ -34,6 +37,23 @@ func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint strin
 		return m.events, nil
 	}
 	return m.events[:limit], nil
+}
+
+func (m *mockEventQuery) ListTradesByMint(ctx context.Context, mint string, limit int) ([]storepkg.TradeRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.detail.RecentTrades) <= limit {
+		return m.detail.RecentTrades, nil
+	}
+	return m.detail.RecentTrades[:limit], nil
+}
+
+func (m *mockEventQuery) GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error) {
+	if m.err != nil {
+		return query.TokenDetail{}, m.err
+	}
+	return m.detail, nil
 }
 
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
@@ -183,5 +203,124 @@ func TestListTokenEventsReturnsMintFeed(t *testing.T) {
 	}
 	if len(response.Events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(response.Events))
+	}
+}
+
+func TestGetTokenDetailReturnsMintCentricPayload(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	queryMock := &mockEventQuery{
+		detail: query.TokenDetail{
+			Mint: "mint_1",
+			CreateEvent: &query.TokenCreateSummary{
+				EventID:     "create_1",
+				Protocol:    "pumpfun",
+				EventType:   "create",
+				EventUnixTS: 1770000000,
+				Name:        "Token One",
+				Symbol:      "ONE",
+				URI:         "https://example.com/one.json",
+			},
+			Markets: []storepkg.MarketRecord{
+				{MarketID: "pool_1", Mint: "mint_1", Protocol: "pumpamm", MarketType: "pumpamm_pool", StartedAt: 1770000100},
+			},
+			RecentTrades: []storepkg.TradeRecord{
+				{EventID: "trade_1", Mint: "mint_1", Side: "buy", TokenAmount: "100", QuoteAmount: "2"},
+			},
+			RecentEvents: []events.Envelope{
+				{EventID: "event_1", EventType: "trade", Protocol: "pumpfun"},
+			},
+		},
+	}
+	handler := NewHandler(service, queryMock)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response query.TokenDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if response.Mint != "mint_1" {
+		t.Fatalf("expected mint_1, got %s", response.Mint)
+	}
+	if response.CreateEvent == nil || response.CreateEvent.Symbol != "ONE" {
+		t.Fatalf("expected create event summary with symbol ONE, got %#v", response.CreateEvent)
+	}
+	if len(response.Markets) != 1 {
+		t.Fatalf("expected 1 market, got %d", len(response.Markets))
+	}
+}
+
+func TestGetTokenDetailReturnsNotFound(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{err: query.ErrTokenNotFound})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/missing_mint", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestListTokenTradesReturnsRecentTrades(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{
+		detail: query.TokenDetail{
+			RecentTrades: []storepkg.TradeRecord{
+				{EventID: "trade_2", Mint: "mint_1", Side: "sell", TokenAmount: "50", QuoteAmount: "1"},
+				{EventID: "trade_1", Mint: "mint_1", Side: "buy", TokenAmount: "100", QuoteAmount: "2"},
+			},
+		},
+	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/trades?limit=2", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Mint   string                 `json:"mint"`
+		Count  int                    `json:"count"`
+		Trades []storepkg.TradeRecord `json:"trades"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if response.Mint != "mint_1" {
+		t.Fatalf("expected mint_1, got %s", response.Mint)
+	}
+	if response.Count != 2 {
+		t.Fatalf("expected count=2, got %d", response.Count)
+	}
+	if len(response.Trades) != 2 {
+		t.Fatalf("expected 2 trades, got %d", len(response.Trades))
 	}
 }

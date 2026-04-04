@@ -3,11 +3,14 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/query"
+	"solana-dashboard-go/internal/store"
 	"strconv"
 )
 
@@ -18,6 +21,8 @@ const (
 
 type eventQuery interface {
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
+	ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error)
+	GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error)
 }
 
 type Handler struct {
@@ -120,6 +125,86 @@ func (h *Handler) ListTokenEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("failed to encode token events response for mint=%s: %v", mint, err)
+	}
+}
+
+func (h *Handler) GetTokenDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.eventQuery == nil {
+		http.Error(w, "token query not configured", http.StatusInternalServerError)
+		return
+	}
+
+	mint := r.PathValue("mint")
+	if mint == "" {
+		http.Error(w, "missing mint", http.StatusBadRequest)
+		return
+	}
+
+	detail, err := h.eventQuery.GetTokenDetail(r.Context(), mint)
+	if err != nil {
+		if errors.Is(err, query.ErrTokenNotFound) {
+			http.Error(w, "token not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("failed to get token detail for mint=%s: %v", mint, err)
+		http.Error(w, "failed to get token detail", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(detail); err != nil {
+		log.Printf("failed to encode token detail response for mint=%s: %v", mint, err)
+	}
+}
+
+func (h *Handler) ListTokenTrades(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.eventQuery == nil {
+		http.Error(w, "token query not configured", http.StatusInternalServerError)
+		return
+	}
+
+	mint := r.PathValue("mint")
+	if mint == "" {
+		http.Error(w, "missing mint", http.StatusBadRequest)
+		return
+	}
+
+	limit, err := parseListLimit(r, defaultEventListLimit, maxEventListLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tradeList, err := h.eventQuery.ListTradesByMint(r.Context(), mint, limit)
+	if err != nil {
+		log.Printf("failed to list trades for mint=%s: %v", mint, err)
+		http.Error(w, "failed to list trades", http.StatusInternalServerError)
+		return
+	}
+
+	response := struct {
+		Mint   string              `json:"mint"`
+		Count  int                 `json:"count"`
+		Trades []store.TradeRecord `json:"trades"`
+	}{
+		Mint:   mint,
+		Count:  len(tradeList),
+		Trades: tradeList,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("failed to encode token trades response for mint=%s: %v", mint, err)
 	}
 }
 
