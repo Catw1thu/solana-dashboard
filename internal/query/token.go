@@ -31,6 +31,10 @@ type tokenTradeReader interface {
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error)
 }
 
+type tokenTimelineReader interface {
+	ListTimelineByMint(ctx context.Context, mint string, limit int) ([]store.TokenTimelineRecord, error)
+}
+
 type tokenTrackedReader interface {
 	ListTrackedTokens(ctx context.Context, limit int) ([]store.TrackedTokenRecord, error)
 }
@@ -72,23 +76,26 @@ type TokenListItem struct {
 }
 
 type TokenService struct {
-	events  tokenEventReader
-	markets tokenMarketReader
-	trades  tokenTradeReader
-	tracked tokenTrackedReader
+	events   tokenEventReader
+	markets  tokenMarketReader
+	trades   tokenTradeReader
+	timeline tokenTimelineReader
+	tracked  tokenTrackedReader
 }
 
 func NewTokenService(
 	events tokenEventReader,
 	markets tokenMarketReader,
 	trades tokenTradeReader,
+	timeline tokenTimelineReader,
 	tracked tokenTrackedReader,
 ) *TokenService {
 	return &TokenService{
-		events:  events,
-		markets: markets,
-		trades:  trades,
-		tracked: tracked,
+		events:   events,
+		markets:  markets,
+		trades:   trades,
+		timeline: timeline,
+		tracked:  tracked,
 	}
 }
 
@@ -137,6 +144,13 @@ func (s *TokenService) ListServiceEventsByMint(ctx context.Context, mint string,
 
 func (s *TokenService) ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error) {
 	return s.trades.ListTradesByMint(ctx, mint, limit)
+}
+
+func (s *TokenService) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]store.TokenTimelineRecord, error) {
+	if s.timeline == nil {
+		return nil, fmt.Errorf("timeline reader not configured")
+	}
+	return s.timeline.ListTimelineByMint(ctx, mint, limit)
 }
 
 func (s *TokenService) GetTokenDetail(ctx context.Context, mint string) (TokenDetail, error) {

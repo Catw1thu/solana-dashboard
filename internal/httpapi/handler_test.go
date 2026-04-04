@@ -20,10 +20,11 @@ type mockStore struct {
 }
 
 type mockEventQuery struct {
-	events []events.Envelope
-	detail query.TokenDetail
-	list   []query.TokenListItem
-	err    error
+	events   []events.Envelope
+	detail   query.TokenDetail
+	list     []query.TokenListItem
+	timeline []storepkg.TokenTimelineRecord
+	err      error
 }
 
 func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
@@ -48,6 +49,16 @@ func (m *mockEventQuery) ListTokens(ctx context.Context, limit int) ([]query.Tok
 		return m.list, nil
 	}
 	return m.list[:limit], nil
+}
+
+func (m *mockEventQuery) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]storepkg.TokenTimelineRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.timeline) <= limit {
+		return m.timeline, nil
+	}
+	return m.timeline[:limit], nil
 }
 
 func (m *mockEventQuery) ListTradesByMint(ctx context.Context, mint string, limit int) ([]storepkg.TradeRecord, error) {
@@ -388,5 +399,47 @@ func TestListTokenTradesReturnsRecentTrades(t *testing.T) {
 	}
 	if len(response.Trades) != 2 {
 		t.Fatalf("expected 2 trades, got %d", len(response.Trades))
+	}
+}
+
+func TestListTokenTimelineReturnsNormalizedFeed(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{
+		timeline: []storepkg.TokenTimelineRecord{
+			{EventID: "timeline_2", Mint: "mint_1", TimelineType: "migrate"},
+			{EventID: "timeline_1", Mint: "mint_1", TimelineType: "trade"},
+		},
+	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}/timeline", handler.ListTokenTimeline)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/timeline?limit=2", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Mint     string                         `json:"mint"`
+		Count    int                            `json:"count"`
+		Timeline []storepkg.TokenTimelineRecord `json:"timeline"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if response.Mint != "mint_1" {
+		t.Fatalf("expected mint_1, got %s", response.Mint)
+	}
+	if response.Count != 2 {
+		t.Fatalf("expected count=2, got %d", response.Count)
+	}
+	if len(response.Timeline) != 2 {
+		t.Fatalf("expected 2 timeline items, got %d", len(response.Timeline))
 	}
 }

@@ -34,9 +34,10 @@ func main() {
 	trackedTokenStore := store.NewTrackedTokenStore(database)
 	marketStore := store.NewMarketStore(database)
 	tradeStore := store.NewTradeStore(database)
-	eventProjector := projector.New(marketStore, tradeStore)
+	timelineStore := store.NewTokenTimelineStore(database)
+	eventProjector := projector.New(marketStore, tradeStore, timelineStore)
 	service := ingest.NewService(hub, serviceEventStore)
-	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore, trackedTokenStore)
+	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore, timelineStore, trackedTokenStore)
 	handler := httpapi.NewHandler(service, tokenQueries)
 	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
 
@@ -61,6 +62,7 @@ func main() {
 	mux.HandleFunc("GET /tokens", handler.ListTokens)
 	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
 	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
+	mux.HandleFunc("GET /tokens/{mint}/timeline", handler.ListTokenTimeline)
 	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)
 	mux.HandleFunc("/ws", handler.ServeWS)
 

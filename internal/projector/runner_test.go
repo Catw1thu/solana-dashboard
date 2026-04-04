@@ -69,6 +69,15 @@ func (w *replayTradeWriter) InsertTrade(ctx context.Context, trade store.TradeRe
 	return nil
 }
 
+type replayTimelineWriter struct {
+	inserts []store.TokenTimelineRecord
+}
+
+func (w *replayTimelineWriter) InsertTimelineEvent(ctx context.Context, item store.TokenTimelineRecord) error {
+	w.inserts = append(w.inserts, item)
+	return nil
+}
+
 func TestRunnerReplayBatchProjectsAndSavesCheckpoint(t *testing.T) {
 	reader := &replayLogReader{
 		entries: []store.ServiceEventLogEntry{
@@ -112,7 +121,8 @@ func TestRunnerReplayBatchProjectsAndSavesCheckpoint(t *testing.T) {
 	}
 	markets := &replayMarketWriter{}
 	trades := &replayTradeWriter{}
-	runner := NewRunner("markets_trades", reader, New(markets, trades))
+	timeline := &replayTimelineWriter{}
+	runner := NewRunner("markets_trades", reader, New(markets, trades, timeline))
 
 	nextLogID, processed, err := runner.ReplayBatch(context.Background(), 0)
 	if err != nil {
@@ -126,6 +136,9 @@ func TestRunnerReplayBatchProjectsAndSavesCheckpoint(t *testing.T) {
 	}
 	if len(markets.upserts) != 1 {
 		t.Fatalf("expected 1 market upsert, got %d", len(markets.upserts))
+	}
+	if len(timeline.inserts) != 1 {
+		t.Fatalf("expected 1 timeline insert, got %d", len(timeline.inserts))
 	}
 	if len(reader.saved) != 1 || reader.saved[0] != 7 {
 		t.Fatalf("expected checkpoint save [7], got %#v", reader.saved)

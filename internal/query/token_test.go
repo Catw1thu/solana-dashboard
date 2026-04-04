@@ -63,6 +63,21 @@ func (m *mockTokenTradeReader) ListTradesByMint(ctx context.Context, mint string
 	return m.trades[:limit], nil
 }
 
+type mockTimelineReader struct {
+	items []store.TokenTimelineRecord
+	err   error
+}
+
+func (m *mockTimelineReader) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]store.TokenTimelineRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.items) <= limit {
+		return m.items, nil
+	}
+	return m.items[:limit], nil
+}
+
 type mockTrackedTokenReader struct {
 	items []store.TrackedTokenRecord
 	err   error
@@ -130,6 +145,7 @@ func TestGetTokenDetailBuildsMintCentricResponse(t *testing.T) {
 			},
 		},
 		nil,
+		nil,
 	)
 
 	detail, err := service.GetTokenDetail(context.Background(), mint)
@@ -165,6 +181,7 @@ func TestGetTokenDetailReturnsNotFoundWhenMintHasNoData(t *testing.T) {
 		&mockTokenMarketReader{},
 		&mockTokenTradeReader{},
 		nil,
+		nil,
 	)
 
 	_, err := service.GetTokenDetail(context.Background(), "missing_mint")
@@ -187,6 +204,7 @@ func TestListTokensBuildsTrackedTokenList(t *testing.T) {
 	createEventUnixTS := int64(1770000000)
 
 	service := NewTokenService(
+		nil,
 		nil,
 		nil,
 		nil,
@@ -247,6 +265,31 @@ func TestListTokensBuildsTrackedTokenList(t *testing.T) {
 	}
 	if items[0].LatestTrade == nil || items[0].LatestTrade.EventID != "trade_1" {
 		t.Fatalf("expected latest trade trade_1, got %#v", items[0].LatestTrade)
+	}
+}
+
+func TestListTimelineByMintPassesThroughTimelineRecords(t *testing.T) {
+	service := NewTokenService(
+		nil,
+		nil,
+		nil,
+		&mockTimelineReader{
+			items: []store.TokenTimelineRecord{
+				{EventID: "timeline_1", Mint: "mint_1", TimelineType: "trade"},
+			},
+		},
+		nil,
+	)
+
+	items, err := service.ListTimelineByMint(context.Background(), "mint_1", 10)
+	if err != nil {
+		t.Fatalf("ListTimelineByMint returned error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 timeline item, got %d", len(items))
+	}
+	if items[0].EventID != "timeline_1" {
+		t.Fatalf("expected timeline_1, got %s", items[0].EventID)
 	}
 }
 
