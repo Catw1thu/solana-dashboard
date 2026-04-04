@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"solana-dashboard-go/internal/events"
@@ -16,8 +17,23 @@ type mockStore struct {
 	err      error
 }
 
+type mockEventQuery struct {
+	events []events.Envelope
+	err    error
+}
+
 func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
 	return m.inserted, m.err
+}
+
+func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.events) <= limit {
+		return m.events, nil
+	}
+	return m.events[:limit], nil
 }
 
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
@@ -25,7 +41,7 @@ func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 	store := &mockStore{inserted: true}
 	service := ingest.NewService(hub, store)
 	defer service.Close()
-	handler := NewHandler(service)
+	handler := NewHandler(service, nil)
 
 	body := []byte(`{
 		"schema_version":1,
@@ -100,7 +116,7 @@ func TestIngestEventRejectsInvalidJSON(t *testing.T) {
 	store := &mockStore{inserted: false, err: nil}
 	service := ingest.NewService(hub, store)
 	defer service.Close()
-	handler := NewHandler(service)
+	handler := NewHandler(service, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/events", bytes.NewBufferString("{"))
 	req.Header.Set("Content-Type", "application/json")
@@ -110,5 +126,62 @@ func TestIngestEventRejectsInvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestListTokenEventsReturnsMintFeed(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	query := &mockEventQuery{
+		events: []events.Envelope{
+			{
+				EventID:     "event_1",
+				Protocol:    "pumpfun",
+				EventType:   "create",
+				TxSignature: "sig_1",
+				Slot:        11,
+			},
+			{
+				EventID:     "event_2",
+				Protocol:    "pumpfun",
+				EventType:   "trade",
+				TxSignature: "sig_2",
+				Slot:        10,
+			},
+		},
+	}
+	handler := NewHandler(service, query)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/events?limit=2", nil)
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Mint   string            `json:"mint"`
+		Count  int               `json:"count"`
+		Events []events.Envelope `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if response.Mint != "mint_1" {
+		t.Fatalf("expected mint_1, got %s", response.Mint)
+	}
+	if response.Count != 2 {
+		t.Fatalf("expected count=2, got %d", response.Count)
+	}
+	if len(response.Events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(response.Events))
 	}
 }

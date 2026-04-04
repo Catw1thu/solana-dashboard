@@ -34,7 +34,7 @@ func main() {
 	tradeStore := store.NewTradeStore(database)
 	eventProjector := projector.New(marketStore, tradeStore)
 	service := ingest.NewService(hub, serviceEventStore)
-	handler := httpapi.NewHandler(service)
+	handler := httpapi.NewHandler(service, serviceEventStore)
 	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
 
 	go func() {
@@ -55,6 +55,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.Healthz)
 	mux.HandleFunc("/internal/events", handler.IngestEvent)
+	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
 	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{

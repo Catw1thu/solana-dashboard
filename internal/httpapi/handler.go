@@ -1,20 +1,34 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
+	"strconv"
 )
 
-type Handler struct {
-	service *ingest.Service
+const (
+	defaultEventListLimit = 100
+	maxEventListLimit     = 500
+)
+
+type eventQuery interface {
+	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
 }
 
-func NewHandler(service *ingest.Service) *Handler {
+type Handler struct {
+	service    *ingest.Service
+	eventQuery eventQuery
+}
+
+func NewHandler(service *ingest.Service, eventQuery eventQuery) *Handler {
 	return &Handler{
-		service: service,
+		service:    service,
+		eventQuery: eventQuery,
 	}
 }
 
@@ -61,4 +75,67 @@ func (h *Handler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) ListTokenEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.eventQuery == nil {
+		http.Error(w, "events query not configured", http.StatusInternalServerError)
+		return
+	}
+
+	mint := r.PathValue("mint")
+	if mint == "" {
+		http.Error(w, "missing mint", http.StatusBadRequest)
+		return
+	}
+
+	limit, err := parseListLimit(r, defaultEventListLimit, maxEventListLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	eventList, err := h.eventQuery.ListServiceEventsByMint(r.Context(), mint, limit)
+	if err != nil {
+		log.Printf("failed to list events for mint=%s: %v", mint, err)
+		http.Error(w, "failed to list events", http.StatusInternalServerError)
+		return
+	}
+
+	response := struct {
+		Mint   string            `json:"mint"`
+		Count  int               `json:"count"`
+		Events []events.Envelope `json:"events"`
+	}{
+		Mint:   mint,
+		Count:  len(eventList),
+		Events: eventList,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("failed to encode token events response for mint=%s: %v", mint, err)
+	}
+}
+
+func parseListLimit(r *http.Request, defaultLimit int, maxLimit int) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return defaultLimit, nil
+	}
+
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit <= 0 {
+		return 0, fmt.Errorf("invalid limit")
+	}
+	if limit > maxLimit {
+		return maxLimit, nil
+	}
+
+	return limit, nil
 }

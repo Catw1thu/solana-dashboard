@@ -68,6 +68,56 @@ from projection_checkpoints
 where projector_name = $1
 `
 
+const listServiceEventsByMintSQL = `
+select
+    event_id,
+    schema_version,
+    chain,
+    protocol,
+    event_type,
+    commitment,
+    slot,
+    tx_signature,
+    tx_index,
+    instruction_source,
+    outer_index,
+    inner_index,
+    event_source,
+    event_unix_ts,
+    refs,
+    payload,
+    created_at
+from service_events
+where refs->>'mint' = $1
+order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+limit $2
+`
+
+const listServiceEventsByPoolSQL = `
+select
+    event_id,
+    schema_version,
+    chain,
+    protocol,
+    event_type,
+    commitment,
+    slot,
+    tx_signature,
+    tx_index,
+    instruction_source,
+    outer_index,
+    inner_index,
+    event_source,
+    event_unix_ts,
+    refs,
+    payload,
+    created_at
+from service_events
+where refs->>'pool' = $1
+order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+limit $2
+`
+
 const saveProjectionCheckpointSQL = `
 insert into projection_checkpoints (projector_name, last_log_id, updated_at)
 values ($1, $2, now())
@@ -224,4 +274,116 @@ func (s *ServiceEventStore) SaveProjectionCheckpoint(
 	}
 
 	return nil
+}
+
+func (s *ServiceEventStore) ListServiceEventsByMint(
+	ctx context.Context,
+	mint string,
+	limit int,
+) ([]events.Envelope, error) {
+	rows, err := s.db.Pool.Query(ctx, listServiceEventsByMintSQL, mint, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query service events by mint=%s: %w", mint, err)
+	}
+	defer rows.Close()
+
+	entries, err := scanServiceEvents(rows, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	eventsList := make([]events.Envelope, 0, len(entries))
+	for _, entry := range entries {
+		eventsList = append(eventsList, entry.Event)
+	}
+
+	return eventsList, nil
+}
+
+func (s *ServiceEventStore) ListServiceEventsByPool(
+	ctx context.Context,
+	pool string,
+	limit int,
+) ([]events.Envelope, error) {
+	rows, err := s.db.Pool.Query(ctx, listServiceEventsByPoolSQL, pool, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query service events by pool=%s: %w", pool, err)
+	}
+	defer rows.Close()
+
+	entries, err := scanServiceEvents(rows, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	eventsList := make([]events.Envelope, 0, len(entries))
+	for _, entry := range entries {
+		eventsList = append(eventsList, entry.Event)
+	}
+
+	return eventsList, nil
+}
+
+func scanServiceEvents(rows pgx.Rows, limit int) ([]ServiceEventLogEntry, error) {
+	entries := make([]ServiceEventLogEntry, 0, limit)
+	for rows.Next() {
+		var (
+			entry          ServiceEventLogEntry
+			slot           int64
+			txIndex        int64
+			outerIndex     int32
+			innerIndex     *int32
+			refsJSON       []byte
+			payloadJSON    []byte
+			source         string
+			eventSource    string
+			instructionRef events.InstructionPath
+		)
+
+		err := rows.Scan(
+			&entry.Event.EventID,
+			&entry.Event.SchemaVersion,
+			&entry.Event.Chain,
+			&entry.Event.Protocol,
+			&entry.Event.EventType,
+			&entry.Event.Commitment,
+			&slot,
+			&entry.Event.TxSignature,
+			&txIndex,
+			&source,
+			&outerIndex,
+			&innerIndex,
+			&eventSource,
+			&entry.Event.EventUnixTS,
+			&refsJSON,
+			&payloadJSON,
+			&entry.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan service event row: %w", err)
+		}
+
+		entry.Event.Slot = uint64(slot)
+		entry.Event.TxIndex = uint64(txIndex)
+		instructionRef.Source = source
+		instructionRef.OuterIndex = int(outerIndex)
+		if innerIndex != nil {
+			value := int(*innerIndex)
+			instructionRef.InnerIndex = &value
+		}
+		entry.Event.InstructionPath = instructionRef
+		entry.Event.EventSource = eventSource
+		entry.Event.Payload = payloadJSON
+		if err := json.Unmarshal(refsJSON, &entry.Event.Refs); err != nil {
+			return nil, fmt.Errorf("unmarshal service event refs: %w", err)
+		}
+
+		entries = append(entries, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate service event rows: %w", err)
+	}
+
+	return entries, nil
 }

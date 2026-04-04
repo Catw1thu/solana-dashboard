@@ -21,7 +21,7 @@ func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 	store := &mockStore{inserted: true}
 	service := ingest.NewService(hub, store)
 	defer service.Close()
-	handler := NewHandler(service)
+	handler := NewHandler(service, nil)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", handler.ServeWS)
