@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::service_event::{model::ServiceEventEnvelope, protobuf::encode_event};
 
 const STREAM_NAME: &str = "SERVICE_EVENTS";
 const STREAM_SUBJECT: &str = "solana.tracked.>";
+const STREAM_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 struct PublishTask {
     event_id: String,
@@ -30,6 +32,7 @@ impl ServiceEventEmitter {
             .get_or_create_stream(async_nats::jetstream::stream::Config {
                 name: STREAM_NAME.to_string(),
                 subjects: vec![STREAM_SUBJECT.to_string()],
+                max_age: STREAM_MAX_AGE,
                 ..Default::default()
             })
             .await
