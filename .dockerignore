@@ -1,8 +1,13 @@
 .git
 .github
-target
 samples
 docs
 *.log
 .DS_Store
 .env
+target
+!target/
+target/*
+!target/release/
+target/release/*
+!target/release/solana-dashboard-lab
