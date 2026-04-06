@@ -33,12 +33,44 @@ func (m *mockTokenEventReader) FindLatestCreateEventByMint(ctx context.Context, 
 	return m.createEvent, nil
 }
 
-type mockTokenMarketReader struct {
-	markets []store.MarketRecord
-	err     error
+type mockTokenReadModel struct {
+	snapshots  []store.TokenSnapshotRecord
+	snapshot   *store.TokenSnapshotRecord
+	markets    []store.TokenMarketRecord
+	trades     []store.TradeEventRecord
+	activities []store.ActivityEventRecord
+	summary    *store.TradeSummaryRecord
+	candles    []store.TokenCandleRecord
+	err        error
 }
 
-func (m *mockTokenMarketReader) ListMarketsByMint(ctx context.Context, mint string, limit int) ([]store.MarketRecord, error) {
+func (m *mockTokenReadModel) ListTokenSnapshots(ctx context.Context, limit int) ([]store.TokenSnapshotRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.snapshots) <= limit {
+		return m.snapshots, nil
+	}
+	return m.snapshots[:limit], nil
+}
+
+func (m *mockTokenReadModel) FindTokenSnapshotByMint(ctx context.Context, mint string) (*store.TokenSnapshotRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.snapshot != nil {
+		return m.snapshot, nil
+	}
+	for _, item := range m.snapshots {
+		if item.Mint == mint {
+			found := item
+			return &found, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockTokenReadModel) ListTokenMarketsByMint(ctx context.Context, mint string, limit int) ([]store.TokenMarketRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -48,12 +80,7 @@ func (m *mockTokenMarketReader) ListMarketsByMint(ctx context.Context, mint stri
 	return m.markets[:limit], nil
 }
 
-type mockTokenTradeReader struct {
-	trades []store.TradeRecord
-	err    error
-}
-
-func (m *mockTokenTradeReader) ListTradesByMint(ctx context.Context, mint string, limit int) ([]store.TradeRecord, error) {
+func (m *mockTokenReadModel) ListTradeEventsByMint(ctx context.Context, mint string, limit int) ([]store.TradeEventRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -63,49 +90,93 @@ func (m *mockTokenTradeReader) ListTradesByMint(ctx context.Context, mint string
 	return m.trades[:limit], nil
 }
 
-type mockTimelineReader struct {
-	items []store.TokenTimelineRecord
-	err   error
-}
-
-func (m *mockTimelineReader) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]store.TokenTimelineRecord, error) {
+func (m *mockTokenReadModel) ListActivityEventsByMint(ctx context.Context, mint string, limit int) ([]store.ActivityEventRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	if len(m.items) <= limit {
-		return m.items, nil
+	if len(m.activities) <= limit {
+		return m.activities, nil
 	}
-	return m.items[:limit], nil
+	return m.activities[:limit], nil
 }
 
-type mockTrackedTokenReader struct {
-	items []store.TrackedTokenRecord
-	err   error
-}
-
-func (m *mockTrackedTokenReader) ListTrackedTokens(ctx context.Context, limit int) ([]store.TrackedTokenRecord, error) {
+func (m *mockTokenReadModel) LoadTradeSummaryByMint(ctx context.Context, mint string) (*store.TradeSummaryRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	if len(m.items) <= limit {
-		return m.items, nil
-	}
-	return m.items[:limit], nil
+	return m.summary, nil
 }
 
-func TestGetTokenDetailBuildsMintCentricResponse(t *testing.T) {
+func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]store.TokenCandleRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.candles) <= limit {
+		return m.candles, nil
+	}
+	return m.candles[:limit], nil
+}
+
+func TestListTokensBuildsNewTokenList(t *testing.T) {
 	mint := "mint_1"
-	creator := "creator_1"
-	bondingCurve := "curve_1"
+	service := NewTokenService(nil, &mockTokenReadModel{
+		snapshots: []store.TokenSnapshotRecord{
+			{
+				Mint:         mint,
+				Name:         stringPtr("Token One"),
+				Symbol:       stringPtr("ONE"),
+				FirstSeenAt:  1770000001,
+				CurrentStage: "pool",
+			},
+		},
+		summary: &store.TradeSummaryRecord{
+			LatestPrice:     floatPtr(0.02),
+			LatestEventUnix: int64Ptr(1770000200),
+			Txns24h:         12,
+			Buys24h:         7,
+			Sells24h:        5,
+			Volume24h:       42,
+			BuyVolume24h:    25,
+			SellVolume24h:   17,
+			Makers24h:       8,
+			Buyers24h:       5,
+			Sellers24h:      4,
+		},
+	})
+
+	items, err := service.ListTokens(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListTokens returned error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Mint != mint {
+		t.Fatalf("expected mint=%s, got %s", mint, items[0].Mint)
+	}
+	if items[0].LatestPrice == nil || *items[0].LatestPrice != 0.02 {
+		t.Fatalf("expected latest price 0.02, got %#v", items[0].LatestPrice)
+	}
+	if items[0].Stats24h == nil || items[0].Stats24h.Txns != 12 {
+		t.Fatalf("expected stats_24h, got %#v", items[0].Stats24h)
+	}
+}
+
+func TestGetTokenDetailReturnsNotFoundWhenMintHasNoData(t *testing.T) {
+	service := NewTokenService(nil, &mockTokenReadModel{})
+
+	_, err := service.GetTokenDetail(context.Background(), "missing_mint")
+	if !errors.Is(err, ErrTokenNotFound) {
+		t.Fatalf("expected ErrTokenNotFound, got %v", err)
+	}
+}
+
+func TestGetTokenDetailBuildsCreateSummary(t *testing.T) {
 	createEvent := events.Envelope{
 		EventID:     "create_event_1",
 		Protocol:    "pumpfun",
 		EventType:   "create",
 		EventUnixTS: 1770000000,
-		Refs: events.EventRefs{
-			Creator:      &creator,
-			BondingCurve: &bondingCurve,
-		},
 		Payload: json.RawMessage(`{
 			"ix_name":"create",
 			"mint":"mint_1",
@@ -126,173 +197,42 @@ func TestGetTokenDetailBuildsMintCentricResponse(t *testing.T) {
 	}
 
 	service := NewTokenService(
-		&mockTokenEventReader{
-			createEvent: &createEvent,
-			events: []events.Envelope{
-				{EventID: "event_2", EventType: "migrate", Protocol: "pumpfun"},
-				{EventID: "event_1", EventType: "trade", Protocol: "pumpfun"},
+		&mockTokenEventReader{createEvent: &createEvent},
+		&mockTokenReadModel{
+			snapshot: &store.TokenSnapshotRecord{
+				Mint:         "mint_1",
+				Name:         stringPtr("Token One"),
+				Symbol:       stringPtr("ONE"),
+				FirstSeenAt:  1770000000,
+				CurrentStage: "bonding_curve",
 			},
 		},
-		&mockTokenMarketReader{
-			markets: []store.MarketRecord{
-				{MarketID: "pool_1", Mint: mint, Protocol: "pumpamm", MarketType: "pumpamm_pool", StartedAt: 1770000100},
-				{MarketID: "curve_1", Mint: mint, Protocol: "pumpfun", MarketType: "pumpfun_curve", StartedAt: 1770000000, EndedAt: int64Ptr(1770000100)},
-			},
-		},
-		&mockTokenTradeReader{
-			trades: []store.TradeRecord{
-				{EventID: "trade_1", Mint: mint, MarketID: "pool_1", Protocol: "pumpamm", Side: "buy", TokenAmount: "100", QuoteAmount: "2"},
-			},
-		},
-		nil,
-		nil,
 	)
 
-	detail, err := service.GetTokenDetail(context.Background(), mint)
+	detail, err := service.GetTokenDetail(context.Background(), "mint_1")
 	if err != nil {
 		t.Fatalf("GetTokenDetail returned error: %v", err)
 	}
-	if detail.Mint != mint {
-		t.Fatalf("expected mint=%s, got %s", mint, detail.Mint)
-	}
-	if detail.CreateEvent == nil {
-		t.Fatal("expected create event summary")
-	}
-	if detail.CreateEvent.Name != "Token One" {
-		t.Fatalf("expected name Token One, got %s", detail.CreateEvent.Name)
-	}
-	if detail.ActiveMarket == nil || detail.ActiveMarket.MarketID != "pool_1" {
-		t.Fatalf("expected active market pool_1, got %#v", detail.ActiveMarket)
-	}
-	if len(detail.Markets) != 2 {
-		t.Fatalf("expected 2 markets, got %d", len(detail.Markets))
-	}
-	if len(detail.RecentTrades) != 1 {
-		t.Fatalf("expected 1 trade, got %d", len(detail.RecentTrades))
-	}
-	if len(detail.RecentEvents) != 2 {
-		t.Fatalf("expected 2 events, got %d", len(detail.RecentEvents))
+	if detail.CreateEvent == nil || detail.CreateEvent.Symbol != "ONE" {
+		t.Fatalf("expected create summary with symbol ONE, got %#v", detail.CreateEvent)
 	}
 }
 
-func TestGetTokenDetailReturnsNotFoundWhenMintHasNoData(t *testing.T) {
-	service := NewTokenService(
-		&mockTokenEventReader{},
-		&mockTokenMarketReader{},
-		&mockTokenTradeReader{},
-		nil,
-		nil,
-	)
-
-	_, err := service.GetTokenDetail(context.Background(), "missing_mint")
-	if !errors.Is(err, ErrTokenNotFound) {
-		t.Fatalf("expected ErrTokenNotFound, got %v", err)
+func TestFormatAmountAppliesDecimals(t *testing.T) {
+	decimals := int32(6)
+	if got := formatAmount("123450000", &decimals); got != "123.45" {
+		t.Fatalf("expected 123.45, got %s", got)
 	}
 }
 
-func TestListTokensBuildsTrackedTokenList(t *testing.T) {
-	mint := "mint_1"
-	creator := "creator_1"
-	bondingCurve := "curve_1"
-	tokenProgram := "token_program_1"
-	currentMarketID := "pool_1"
-	createProtocol := "pumpfun"
-	createEventType := "create"
-	createName := "Token One"
-	createSymbol := "ONE"
-	createURI := "https://example.com/one.json"
-	createEventUnixTS := int64(1770000000)
-
-	service := NewTokenService(
-		nil,
-		nil,
-		nil,
-		nil,
-		&mockTrackedTokenReader{
-			items: []store.TrackedTokenRecord{
-				{
-					Mint:              mint,
-					Creator:           &creator,
-					BondingCurve:      &bondingCurve,
-					TokenProgram:      &tokenProgram,
-					CreateEventID:     "create_1",
-					AcceptedAt:        1770000001,
-					CurrentStage:      "pumpamm",
-					CurrentMarketType: "pumpamm_pool",
-					CurrentMarketID:   &currentMarketID,
-					CreateProtocol:    &createProtocol,
-					CreateEventType:   &createEventType,
-					CreateEventUnixTS: &createEventUnixTS,
-					CreateName:        &createName,
-					CreateSymbol:      &createSymbol,
-					CreateURI:         &createURI,
-					CurrentMarket: &store.MarketRecord{
-						MarketID:   currentMarketID,
-						Mint:       mint,
-						Protocol:   "pumpamm",
-						MarketType: "pumpamm_pool",
-						StartedAt:  1770000100,
-					},
-					LatestTrade: &store.TradeRecord{
-						EventID:     "trade_1",
-						Mint:        mint,
-						MarketID:    currentMarketID,
-						Protocol:    "pumpamm",
-						Side:        "buy",
-						TokenAmount: "100",
-						QuoteAmount: "2",
-					},
-				},
-			},
-		},
-	)
-
-	items, err := service.ListTokens(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("ListTokens returned error: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(items))
-	}
-	if items[0].Mint != mint {
-		t.Fatalf("expected mint=%s, got %s", mint, items[0].Mint)
-	}
-	if items[0].CreateEvent == nil || items[0].CreateEvent.Symbol != "ONE" {
-		t.Fatalf("expected create summary with symbol ONE, got %#v", items[0].CreateEvent)
-	}
-	if items[0].CurrentMarket == nil || items[0].CurrentMarket.MarketID != currentMarketID {
-		t.Fatalf("expected current market pool_1, got %#v", items[0].CurrentMarket)
-	}
-	if items[0].LatestTrade == nil || items[0].LatestTrade.EventID != "trade_1" {
-		t.Fatalf("expected latest trade trade_1, got %#v", items[0].LatestTrade)
-	}
-}
-
-func TestListTimelineByMintPassesThroughTimelineRecords(t *testing.T) {
-	service := NewTokenService(
-		nil,
-		nil,
-		nil,
-		&mockTimelineReader{
-			items: []store.TokenTimelineRecord{
-				{EventID: "timeline_1", Mint: "mint_1", TimelineType: "trade"},
-			},
-		},
-		nil,
-	)
-
-	items, err := service.ListTimelineByMint(context.Background(), "mint_1", 10)
-	if err != nil {
-		t.Fatalf("ListTimelineByMint returned error: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 timeline item, got %d", len(items))
-	}
-	if items[0].EventID != "timeline_1" {
-		t.Fatalf("expected timeline_1, got %s", items[0].EventID)
-	}
+func stringPtr(v string) *string {
+	return &v
 }
 
 func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func floatPtr(v float64) *float64 {
 	return &v
 }

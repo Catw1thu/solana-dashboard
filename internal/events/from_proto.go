@@ -151,6 +151,7 @@ func pumpfunCreatePayloadFromProto(payload *serviceeventpb.PumpfunCreatePayload)
 		TokenTotalSupply:     payload.GetTokenTotalSupply(),
 		IsMayhemMode:         payload.GetIsMayhemMode(),
 		IsCashbackEnabled:    payload.GetIsCashbackEnabled(),
+		MintDecimals:         payload.MintDecimals,
 	}
 }
 
@@ -220,16 +221,18 @@ func pumpAmmCreatePoolPayloadFromProto(payload *serviceeventpb.PumpAmmCreatePool
 	args := payload.GetInstructionArgs()
 
 	return PumpAmmCreatePoolPayload{
-		Pool:             payload.GetPool(),
-		Creator:          payload.GetCreator(),
-		BaseMint:         payload.GetBaseMint(),
-		QuoteMint:        payload.GetQuoteMint(),
-		LPMint:           payload.GetLpMint(),
-		BaseAmountIn:     payload.GetBaseAmountIn(),
-		QuoteAmountIn:    payload.GetQuoteAmountIn(),
-		InitialLiquidity: payload.GetInitialLiquidity(),
-		CoinCreator:      payload.GetCoinCreator(),
-		IsMayhemMode:     payload.GetIsMayhemMode(),
+		Pool:              payload.GetPool(),
+		Creator:           payload.GetCreator(),
+		BaseMint:          payload.GetBaseMint(),
+		QuoteMint:         payload.GetQuoteMint(),
+		LPMint:            payload.GetLpMint(),
+		BaseAmountIn:      payload.GetBaseAmountIn(),
+		QuoteAmountIn:     payload.GetQuoteAmountIn(),
+		InitialLiquidity:  payload.GetInitialLiquidity(),
+		CoinCreator:       payload.GetCoinCreator(),
+		IsMayhemMode:      payload.GetIsMayhemMode(),
+		BaseMintDecimals:  payload.GetBaseMintDecimals(),
+		QuoteMintDecimals: payload.GetQuoteMintDecimals(),
 		InstructionArgs: PumpAmmCreatePoolInstructionArgs{
 			Index:          uint16(optionalPumpAmmCreatePoolArgs(args, func(v *serviceeventpb.PumpAmmCreatePoolInstructionArgs) uint32 { return v.GetIndex() })),
 			CoinCreator:    optionalPumpAmmCreatePoolArgs(args, func(v *serviceeventpb.PumpAmmCreatePoolInstructionArgs) string { return v.GetCoinCreator() }),

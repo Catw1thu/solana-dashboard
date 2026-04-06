@@ -17,6 +17,21 @@ import (
 	"time"
 )
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -31,15 +46,12 @@ func main() {
 
 	hub := realtime.NewHub()
 	serviceEventStore := store.NewServiceEventStore(database)
-	trackedTokenStore := store.NewTrackedTokenStore(database)
-	marketStore := store.NewMarketStore(database)
-	tradeStore := store.NewTradeStore(database)
-	timelineStore := store.NewTokenTimelineStore(database)
-	eventProjector := projector.New(marketStore, tradeStore, timelineStore)
+	readModelStore := store.NewReadModelStore(database)
+	eventProjector := projector.New(readModelStore)
 	service := ingest.NewService(hub, serviceEventStore)
-	tokenQueries := query.NewTokenService(serviceEventStore, marketStore, tradeStore, timelineStore, trackedTokenStore)
+	tokenQueries := query.NewTokenService(serviceEventStore, readModelStore)
 	handler := httpapi.NewHandler(service, tokenQueries)
-	projectionRunner := projector.NewRunner("markets_trades", serviceEventStore, eventProjector)
+	projectionRunner := projector.NewRunner("token_read_model", serviceEventStore, eventProjector)
 
 	go func() {
 		if err := projectionRunner.Run(ctx); err != nil {
@@ -63,12 +75,14 @@ func main() {
 	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
 	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
 	mux.HandleFunc("GET /tokens/{mint}/timeline", handler.ListTokenTimeline)
+	mux.HandleFunc("GET /tokens/{mint}/candles", handler.ListTokenCandles)
+	mux.HandleFunc("GET /tokens/{mint}/activity", handler.ListTokenActivity)
 	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)
 	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           mux,
+		Handler:           corsMiddleware(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

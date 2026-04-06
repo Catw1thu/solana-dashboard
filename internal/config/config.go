@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -12,6 +14,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	_ = godotenv.Load(".env")
 	cfg := Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		APIAddr:     os.Getenv("API_ADDR"),

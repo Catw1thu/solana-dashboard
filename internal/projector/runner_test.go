@@ -15,11 +15,7 @@ type replayLogReader struct {
 	saved      []int64
 }
 
-func (r *replayLogReader) ListServiceEventsAfterLogID(
-	ctx context.Context,
-	afterLogID int64,
-	limit int,
-) ([]store.ServiceEventLogEntry, error) {
+func (r *replayLogReader) ListServiceEventsAfterLogID(ctx context.Context, afterLogID int64, limit int) ([]store.ServiceEventLogEntry, error) {
 	filtered := make([]store.ServiceEventLogEntry, 0, limit)
 	for _, entry := range r.entries {
 		if entry.LogID <= afterLogID {
@@ -37,44 +33,46 @@ func (r *replayLogReader) LoadProjectionCheckpoint(ctx context.Context, projecto
 	return r.checkpoint, nil
 }
 
-func (r *replayLogReader) SaveProjectionCheckpoint(
-	ctx context.Context,
-	projectorName string,
-	lastLogID int64,
-) error {
+func (r *replayLogReader) SaveProjectionCheckpoint(ctx context.Context, projectorName string, lastLogID int64) error {
 	r.saved = append(r.saved, lastLogID)
 	r.checkpoint = lastLogID
 	return nil
 }
 
-type replayMarketWriter struct {
-	upserts []store.MarketRecord
+type replayReadModelWriter struct {
+	tokens     []store.TokenRecord
+	metadata   []store.TokenMetadataRecord
+	markets    []store.TokenMarketRecord
+	trades     []store.TradeEventRecord
+	activities []store.ActivityEventRecord
 }
 
-func (w *replayMarketWriter) UpsertMarket(ctx context.Context, market store.MarketRecord) error {
-	w.upserts = append(w.upserts, market)
+func (w *replayReadModelWriter) UpsertToken(ctx context.Context, record store.TokenRecord) error {
+	w.tokens = append(w.tokens, record)
 	return nil
 }
 
-func (w *replayMarketWriter) CloseMarket(ctx context.Context, marketID string, endedAt int64) error {
+func (w *replayReadModelWriter) UpsertTokenMetadata(ctx context.Context, record store.TokenMetadataRecord) error {
+	w.metadata = append(w.metadata, record)
 	return nil
 }
 
-type replayTradeWriter struct {
-	inserts []store.TradeRecord
-}
-
-func (w *replayTradeWriter) InsertTrade(ctx context.Context, trade store.TradeRecord) error {
-	w.inserts = append(w.inserts, trade)
+func (w *replayReadModelWriter) UpsertTokenMarket(ctx context.Context, record store.TokenMarketRecord) error {
+	w.markets = append(w.markets, record)
 	return nil
 }
 
-type replayTimelineWriter struct {
-	inserts []store.TokenTimelineRecord
+func (w *replayReadModelWriter) CloseTokenMarket(ctx context.Context, marketID string, endedAt int64) error {
+	return nil
 }
 
-func (w *replayTimelineWriter) InsertTimelineEvent(ctx context.Context, item store.TokenTimelineRecord) error {
-	w.inserts = append(w.inserts, item)
+func (w *replayReadModelWriter) InsertTradeEvent(ctx context.Context, trade store.TradeEventRecord) error {
+	w.trades = append(w.trades, trade)
+	return nil
+}
+
+func (w *replayReadModelWriter) InsertActivityEvent(ctx context.Context, activity store.ActivityEventRecord) error {
+	w.activities = append(w.activities, activity)
 	return nil
 }
 
@@ -119,10 +117,8 @@ func TestRunnerReplayBatchProjectsAndSavesCheckpoint(t *testing.T) {
 			},
 		},
 	}
-	markets := &replayMarketWriter{}
-	trades := &replayTradeWriter{}
-	timeline := &replayTimelineWriter{}
-	runner := NewRunner("markets_trades", reader, New(markets, trades, timeline))
+	readModel := &replayReadModelWriter{}
+	runner := NewRunner("token_read_model", reader, New(readModel))
 
 	nextLogID, processed, err := runner.ReplayBatch(context.Background(), 0)
 	if err != nil {
@@ -134,11 +130,17 @@ func TestRunnerReplayBatchProjectsAndSavesCheckpoint(t *testing.T) {
 	if nextLogID != 7 {
 		t.Fatalf("expected nextLogID=7, got %d", nextLogID)
 	}
-	if len(markets.upserts) != 1 {
-		t.Fatalf("expected 1 market upsert, got %d", len(markets.upserts))
+	if len(readModel.tokens) != 1 {
+		t.Fatalf("expected 1 token upsert, got %d", len(readModel.tokens))
 	}
-	if len(timeline.inserts) != 1 {
-		t.Fatalf("expected 1 timeline insert, got %d", len(timeline.inserts))
+	if len(readModel.metadata) != 1 {
+		t.Fatalf("expected 1 metadata upsert, got %d", len(readModel.metadata))
+	}
+	if len(readModel.markets) != 1 {
+		t.Fatalf("expected 1 market upsert, got %d", len(readModel.markets))
+	}
+	if len(readModel.activities) != 1 {
+		t.Fatalf("expected 1 activity insert, got %d", len(readModel.activities))
 	}
 	if len(reader.saved) != 1 || reader.saved[0] != 7 {
 		t.Fatalf("expected checkpoint save [7], got %#v", reader.saved)

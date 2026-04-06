@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"solana-dashboard-go/internal/events"
+	"solana-dashboard-go/internal/store"
 )
 
 func TestBuildPumpAmmTradeWhenTrackedMintIsQuoteAndSellMeansBuyToken(t *testing.T) {
@@ -24,7 +25,7 @@ func TestBuildPumpAmmTradeWhenTrackedMintIsQuoteAndSellMeansBuyToken(t *testing.
 		IxName:         "sell",
 		Pool:           "pool_1",
 		User:           "user_1",
-		BaseMint:       solMint,
+		BaseMint:       store.SolMint,
 		QuoteMint:      mint,
 		BaseAmountIn:   ptr("100"),
 		QuoteAmountOut: ptr("250"),
@@ -38,14 +39,14 @@ func TestBuildPumpAmmTradeWhenTrackedMintIsQuoteAndSellMeansBuyToken(t *testing.
 	if trade.Side != tokenSideBuy {
 		t.Fatalf("expected token side buy, got %s", trade.Side)
 	}
-	if trade.TokenAmount != "250" {
-		t.Fatalf("expected token amount 250, got %s", trade.TokenAmount)
+	if trade.TokenAmountRaw != "250" {
+		t.Fatalf("expected token amount raw 250, got %s", trade.TokenAmountRaw)
 	}
-	if trade.QuoteAmount != "100" {
-		t.Fatalf("expected quote amount 100, got %s", trade.QuoteAmount)
+	if trade.QuoteAmountRaw != "100" {
+		t.Fatalf("expected quote amount raw 100, got %s", trade.QuoteAmountRaw)
 	}
-	if trade.QuoteMint != solMint {
-		t.Fatalf("expected quote mint %s, got %s", solMint, trade.QuoteMint)
+	if trade.QuoteMint != store.SolMint {
+		t.Fatalf("expected quote mint %s, got %s", store.SolMint, trade.QuoteMint)
 	}
 }
 
@@ -67,7 +68,7 @@ func TestBuildPumpAmmTradeWhenTrackedMintIsQuoteAndBuyMeansSellToken(t *testing.
 		IxName:        "buy_exact_quote_in",
 		Pool:          "pool_1",
 		User:          "user_1",
-		BaseMint:      solMint,
+		BaseMint:      store.SolMint,
 		QuoteMint:     mint,
 		BaseAmountOut: ptr("90"),
 		QuoteAmountIn: ptr("200"),
@@ -81,14 +82,14 @@ func TestBuildPumpAmmTradeWhenTrackedMintIsQuoteAndBuyMeansSellToken(t *testing.
 	if trade.Side != tokenSideSell {
 		t.Fatalf("expected token side sell, got %s", trade.Side)
 	}
-	if trade.TokenAmount != "200" {
-		t.Fatalf("expected token amount 200, got %s", trade.TokenAmount)
+	if trade.TokenAmountRaw != "200" {
+		t.Fatalf("expected token amount raw 200, got %s", trade.TokenAmountRaw)
 	}
-	if trade.QuoteAmount != "90" {
-		t.Fatalf("expected quote amount 90, got %s", trade.QuoteAmount)
+	if trade.QuoteAmountRaw != "90" {
+		t.Fatalf("expected quote amount raw 90, got %s", trade.QuoteAmountRaw)
 	}
-	if trade.QuoteMint != solMint {
-		t.Fatalf("expected quote mint %s, got %s", solMint, trade.QuoteMint)
+	if trade.QuoteMint != store.SolMint {
+		t.Fatalf("expected quote mint %s, got %s", store.SolMint, trade.QuoteMint)
 	}
 }
 

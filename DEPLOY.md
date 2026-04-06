@@ -24,7 +24,9 @@ docker build -f docker/Dockerfile.migrate -t ghcr.io/<org>/solana-dashboard-migr
 In `solana-dashboard-lab`:
 
 ```bash
+rustup toolchain install 1.91.1
 cargo test
+cargo build --release
 docker build -f docker/Dockerfile.rust -t ghcr.io/<org>/solana-dashboard-lab:local .
 ```
 

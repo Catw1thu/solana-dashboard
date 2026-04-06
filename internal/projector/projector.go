@@ -4,176 +4,149 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/store"
 )
 
 const (
-	solMint                = "So11111111111111111111111111111111111111112"
 	marketTypePumpfunCurve = "pumpfun_curve"
 	marketTypePumpAmmPool  = "pumpamm_pool"
 	protocolPumpfun        = "pumpfun"
 	protocolPumpAmm        = "pumpamm"
+	stageBondingCurve      = "bonding_curve"
+	stagePool              = "pool"
 	tokenSideBuy           = "buy"
 	tokenSideSell          = "sell"
 )
 
-type marketWriter interface {
-	UpsertMarket(ctx context.Context, market store.MarketRecord) error
-	CloseMarket(ctx context.Context, marketID string, endedAt int64) error
-}
-
-type tradeWriter interface {
-	InsertTrade(ctx context.Context, trade store.TradeRecord) error
-}
-
-type timelineWriter interface {
-	InsertTimelineEvent(ctx context.Context, item store.TokenTimelineRecord) error
+type readModelWriter interface {
+	UpsertToken(ctx context.Context, record store.TokenRecord) error
+	UpsertTokenMetadata(ctx context.Context, record store.TokenMetadataRecord) error
+	UpsertTokenMarket(ctx context.Context, record store.TokenMarketRecord) error
+	CloseTokenMarket(ctx context.Context, marketID string, endedAt int64) error
+	InsertTradeEvent(ctx context.Context, trade store.TradeEventRecord) error
+	InsertActivityEvent(ctx context.Context, activity store.ActivityEventRecord) error
 }
 
 type Projector struct {
-	markets  marketWriter
-	trades   tradeWriter
-	timeline timelineWriter
+	store readModelWriter
 }
 
-func New(markets marketWriter, trades tradeWriter, timeline timelineWriter) *Projector {
-	return &Projector{
-		markets:  markets,
-		trades:   trades,
-		timeline: timeline,
-	}
+func New(readModel readModelWriter) *Projector {
+	return &Projector{store: readModel}
 }
 
 func (p *Projector) Project(ctx context.Context, event *events.Envelope, payload any) error {
+	if p.store == nil {
+		return nil
+	}
+
 	switch value := payload.(type) {
 	case events.PumpfunCreatePayload:
-		if err := p.markets.UpsertMarket(ctx, buildPumpfunCreateMarket(event, value)); err != nil {
+		if err := p.projectPumpfunCreate(ctx, event, value); err != nil {
 			return err
 		}
-		timeline, err := buildPumpfunCreateTimeline(event, value)
-		if err != nil {
-			return err
-		}
-		return p.insertTimeline(ctx, timeline)
-	case events.PumpAmmCreatePoolPayload:
-		if err := p.markets.UpsertMarket(ctx, buildPumpAmmCreatePoolMarket(event, value)); err != nil {
-			return err
-		}
-		timeline, err := buildPumpAmmCreatePoolTimeline(event, value)
-		if err != nil {
-			return err
-		}
-		return p.insertTimeline(ctx, timeline)
-	case events.PumpfunMigratePayload:
-		if err := p.markets.CloseMarket(ctx, value.BondingCurve, event.EventUnixTS); err != nil {
-			return fmt.Errorf("close pumpfun curve market: %w", err)
-		}
-		if err := p.markets.UpsertMarket(ctx, buildPumpfunMigratePoolMarket(event, value)); err != nil {
-			return err
-		}
-		timeline, err := buildPumpfunMigrateTimeline(event, value)
-		if err != nil {
-			return err
-		}
-		return p.insertTimeline(ctx, timeline)
 	case events.PumpfunTradePayload:
-		trade := buildPumpfunTrade(event, value)
-		if err := p.trades.InsertTrade(ctx, trade); err != nil {
+		if err := p.projectPumpfunTrade(ctx, event, value); err != nil {
 			return err
 		}
-		timeline, err := buildTradeTimeline(event, trade)
-		if err != nil {
+	case events.PumpfunMigratePayload:
+		if err := p.projectPumpfunMigrate(ctx, event, value); err != nil {
 			return err
 		}
-		return p.insertTimeline(ctx, timeline)
+	case events.PumpAmmCreatePoolPayload:
+		if err := p.projectPumpAmmCreatePool(ctx, event, value); err != nil {
+			return err
+		}
 	case events.PumpAmmSwapPayload:
-		trade, err := buildPumpAmmTrade(event, value)
-		if err != nil {
+		if err := p.projectPumpAmmSwap(ctx, event, value); err != nil {
 			return err
 		}
-		if err := p.trades.InsertTrade(ctx, trade); err != nil {
-			return err
-		}
-		timeline, err := buildTradeTimeline(event, trade)
-		if err != nil {
-			return err
-		}
-		return p.insertTimeline(ctx, timeline)
 	case events.PumpAmmLiquidityPayload:
-		timeline, err := buildPumpAmmLiquidityTimeline(event, value)
-		if err != nil {
+		if err := p.projectPumpAmmLiquidity(ctx, event, value); err != nil {
 			return err
 		}
-		return p.insertTimeline(ctx, timeline)
-	default:
-		return nil
 	}
+
+	return nil
 }
 
-func (p *Projector) insertTimeline(ctx context.Context, item store.TokenTimelineRecord) error {
-	if p.timeline == nil {
-		return nil
+func (p *Projector) projectPumpfunCreate(ctx context.Context, event *events.Envelope, payload events.PumpfunCreatePayload) error {
+	createEventID := event.EventID
+	creator := ptrIfNotEmpty(payload.Creator)
+	bondingCurve := ptrIfNotEmpty(payload.BondingCurve)
+	tokenProgram := ptrIfNotEmpty(payload.TokenProgram)
+	activeMarketID := ptrIfNotEmpty(payload.BondingCurve)
+	activeMarketType := ptrIfNotEmpty(marketTypePumpfunCurve)
+
+	if err := p.store.UpsertToken(ctx, store.TokenRecord{
+		Mint:             payload.Mint,
+		Creator:          creator,
+		BondingCurve:     bondingCurve,
+		TokenProgram:     tokenProgram,
+		CreateEventID:    &createEventID,
+		FirstSeenAt:      event.EventUnixTS,
+		CurrentStage:     stageBondingCurve,
+		ActiveMarketID:   activeMarketID,
+		ActiveMarketType: activeMarketType,
+	}); err != nil {
+		return err
 	}
-	return p.timeline.InsertTimelineEvent(ctx, item)
+
+	if err := p.store.UpsertTokenMetadata(ctx, store.TokenMetadataRecord{
+		Mint:              payload.Mint,
+		Name:              ptrIfNotEmpty(payload.Name),
+		Symbol:            ptrIfNotEmpty(payload.Symbol),
+		URI:               ptrIfNotEmpty(payload.URI),
+		Decimals:          optionalInt32FromUint32(payload.MintDecimals),
+		TotalSupplyRaw:    ptrIfNotEmpty(payload.TokenTotalSupply),
+		QuoteMint:         ptrIfNotEmpty(store.SolMint),
+		QuoteDecimals:     int32Ptr(store.SolDecimals),
+		Creator:           creator,
+		BondingCurve:      bondingCurve,
+		TokenProgram:      tokenProgram,
+		IsMayhemMode:      boolPtr(payload.IsMayhemMode),
+		IsCashbackEnabled: boolPtr(payload.IsCashbackEnabled),
+		SourceEventID:     &createEventID,
+	}); err != nil {
+		return err
+	}
+
+	if err := p.store.UpsertTokenMarket(ctx, store.TokenMarketRecord{
+		MarketID:          payload.BondingCurve,
+		Mint:              payload.Mint,
+		Protocol:          protocolPumpfun,
+		MarketType:        marketTypePumpfunCurve,
+		BondingCurve:      bondingCurve,
+		BaseMint:          ptrIfNotEmpty(payload.Mint),
+		QuoteMint:         ptrIfNotEmpty(store.SolMint),
+		BaseMintDecimals:  optionalInt32FromUint32(payload.MintDecimals),
+		QuoteMintDecimals: int32Ptr(store.SolDecimals),
+		StartedAt:         event.EventUnixTS,
+		CreateEventID:     event.EventID,
+	}); err != nil {
+		return err
+	}
+
+	return p.insertActivity(ctx, event, payload.Mint, "create", store.ActivityEventRecord{
+		EventID:        event.EventID,
+		Mint:           payload.Mint,
+		Protocol:       protocolPumpfun,
+		EventType:      event.EventType,
+		ActivityType:   "create",
+		MarketID:       activeMarketID,
+		MarketType:     activeMarketType,
+		UserAddress:    ptrIfNotEmpty(payload.User),
+		TxSignature:    event.TxSignature,
+		Slot:           event.Slot,
+		EventUnixTS:    event.EventUnixTS,
+		RawEventSource: event.EventSource,
+	})
 }
 
-func buildPumpfunCreateMarket(event *events.Envelope, payload events.PumpfunCreatePayload) store.MarketRecord {
-	bondingCurve := payload.BondingCurve
-	quoteMint := solMint
-
-	return store.MarketRecord{
-		MarketID:      bondingCurve,
-		Mint:          payload.Mint,
-		Protocol:      protocolPumpfun,
-		MarketType:    marketTypePumpfunCurve,
-		BondingCurve:  &bondingCurve,
-		QuoteMint:     &quoteMint,
-		StartedAt:     event.EventUnixTS,
-		CreateEventID: event.EventID,
-	}
-}
-
-func buildPumpAmmCreatePoolMarket(event *events.Envelope, payload events.PumpAmmCreatePoolPayload) store.MarketRecord {
-	pool := payload.Pool
-	baseMint := payload.BaseMint
-	quoteMint := payload.QuoteMint
-	lpMint := payload.LPMint
-
-	return store.MarketRecord{
-		MarketID:      payload.Pool,
-		Mint:          trackedMint(event, payload.BaseMint, payload.QuoteMint),
-		Protocol:      protocolPumpAmm,
-		MarketType:    marketTypePumpAmmPool,
-		Pool:          &pool,
-		BaseMint:      &baseMint,
-		QuoteMint:     &quoteMint,
-		LPMint:        &lpMint,
-		StartedAt:     event.EventUnixTS,
-		CreateEventID: event.EventID,
-	}
-}
-
-func buildPumpfunMigratePoolMarket(event *events.Envelope, payload events.PumpfunMigratePayload) store.MarketRecord {
-	pool := payload.Pool
-	lpMint := payload.LPMint
-
-	return store.MarketRecord{
-		MarketID:      payload.Pool,
-		Mint:          payload.Mint,
-		Protocol:      protocolPumpAmm,
-		MarketType:    marketTypePumpAmmPool,
-		Pool:          &pool,
-		LPMint:        &lpMint,
-		StartedAt:     event.EventUnixTS,
-		CreateEventID: event.EventID,
-	}
-}
-
-func buildPumpfunTrade(event *events.Envelope, payload events.PumpfunTradePayload) store.TradeRecord {
-	bondingCurve := payload.BondingCurve
-
-	return store.TradeRecord{
+func (p *Projector) projectPumpfunTrade(ctx context.Context, event *events.Envelope, payload events.PumpfunTradePayload) error {
+	trade := store.TradeEventRecord{
 		EventID:        event.EventID,
 		Mint:           payload.Mint,
 		MarketID:       payload.BondingCurve,
@@ -182,25 +155,269 @@ func buildPumpfunTrade(event *events.Envelope, payload events.PumpfunTradePayloa
 		Side:           payload.Side,
 		IxName:         payload.IxName,
 		UserAddress:    payload.User,
-		BondingCurve:   &bondingCurve,
-		QuoteMint:      solMint,
-		TokenAmount:    payload.TokenAmount,
-		QuoteAmount:    payload.SolAmount,
+		QuoteMint:      store.SolMint,
+		TokenAmountRaw: payload.TokenAmount,
+		QuoteAmountRaw: payload.SolAmount,
 		TxSignature:    event.TxSignature,
 		Slot:           event.Slot,
 		EventUnixTS:    event.EventUnixTS,
 		RawEventSource: event.EventSource,
 	}
-}
-
-func buildPumpAmmTrade(event *events.Envelope, payload events.PumpAmmSwapPayload) (store.TradeRecord, error) {
-	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
-	if mint == "" {
-		return store.TradeRecord{}, fmt.Errorf("tracked mint missing for pumpamm swap event %s", event.EventID)
+	if err := p.store.InsertTradeEvent(ctx, trade); err != nil {
+		return err
 	}
 
-	pool := payload.Pool
-	trade := store.TradeRecord{
+	return p.insertActivity(ctx, event, payload.Mint, "trade", store.ActivityEventRecord{
+		EventID:        event.EventID,
+		Mint:           payload.Mint,
+		Protocol:       protocolPumpfun,
+		EventType:      event.EventType,
+		ActivityType:   "trade",
+		MarketID:       ptrIfNotEmpty(payload.BondingCurve),
+		MarketType:     ptrIfNotEmpty(marketTypePumpfunCurve),
+		UserAddress:    ptrIfNotEmpty(payload.User),
+		Side:           ptrIfNotEmpty(payload.Side),
+		QuoteMint:      ptrIfNotEmpty(store.SolMint),
+		TokenAmountRaw: ptrIfNotEmpty(payload.TokenAmount),
+		QuoteAmountRaw: ptrIfNotEmpty(payload.SolAmount),
+		TxSignature:    event.TxSignature,
+		Slot:           event.Slot,
+		EventUnixTS:    event.EventUnixTS,
+		RawEventSource: event.EventSource,
+	})
+}
+
+func (p *Projector) projectPumpfunMigrate(ctx context.Context, event *events.Envelope, payload events.PumpfunMigratePayload) error {
+	if payload.BondingCurve != "" {
+		if err := p.store.CloseTokenMarket(ctx, payload.BondingCurve, event.EventUnixTS); err != nil {
+			return err
+		}
+	}
+
+	migratedAt := event.EventUnixTS
+	activeMarketID := ptrIfNotEmpty(payload.Pool)
+	activeMarketType := ptrIfNotEmpty(marketTypePumpAmmPool)
+	if err := p.store.UpsertToken(ctx, store.TokenRecord{
+		Mint:             payload.Mint,
+		Creator:          ptrIfNotEmpty(stringValue(event.Refs.Creator)),
+		BondingCurve:     ptrIfNotEmpty(payload.BondingCurve),
+		TokenProgram:     ptrIfNotEmpty(payload.TokenProgram),
+		FirstSeenAt:      event.EventUnixTS,
+		CurrentStage:     stagePool,
+		ActiveMarketID:   activeMarketID,
+		ActiveMarketType: activeMarketType,
+		MigratedAt:       &migratedAt,
+	}); err != nil {
+		return err
+	}
+
+	if err := p.store.UpsertTokenMarket(ctx, store.TokenMarketRecord{
+		MarketID:      payload.Pool,
+		Mint:          payload.Mint,
+		Protocol:      protocolPumpAmm,
+		MarketType:    marketTypePumpAmmPool,
+		Pool:          ptrIfNotEmpty(payload.Pool),
+		BaseMint:      ptrIfNotEmpty(payload.Mint),
+		QuoteMint:     ptrIfNotEmpty(store.SolMint),
+		LPMint:        ptrIfNotEmpty(payload.LPMint),
+		StartedAt:     event.EventUnixTS,
+		CreateEventID: event.EventID,
+	}); err != nil {
+		return err
+	}
+
+	return p.insertActivity(ctx, event, payload.Mint, "migrate", store.ActivityEventRecord{
+		EventID:        event.EventID,
+		Mint:           payload.Mint,
+		Protocol:       protocolPumpfun,
+		EventType:      event.EventType,
+		ActivityType:   "migrate",
+		MarketID:       activeMarketID,
+		MarketType:     activeMarketType,
+		UserAddress:    ptrIfNotEmpty(payload.User),
+		QuoteMint:      ptrIfNotEmpty(store.SolMint),
+		TokenAmountRaw: ptrIfNotEmpty(payload.MintAmount),
+		QuoteAmountRaw: ptrIfNotEmpty(payload.SolAmount),
+		TxSignature:    event.TxSignature,
+		Slot:           event.Slot,
+		EventUnixTS:    event.EventUnixTS,
+		RawEventSource: event.EventSource,
+	})
+}
+
+func (p *Projector) projectPumpAmmCreatePool(ctx context.Context, event *events.Envelope, payload events.PumpAmmCreatePoolPayload) error {
+	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
+	if mint == "" {
+		return fmt.Errorf("tracked mint missing for pumpamm create_pool event %s", event.EventID)
+	}
+
+	metadata := tokenMetadataFromCreatePool(event.EventID, mint, payload)
+	activeMarketID := ptrIfNotEmpty(payload.Pool)
+	activeMarketType := ptrIfNotEmpty(marketTypePumpAmmPool)
+
+	if err := p.store.UpsertToken(ctx, store.TokenRecord{
+		Mint:             mint,
+		Creator:          firstNonNil(ptrIfNotEmpty(payload.CoinCreator), ptrIfNotEmpty(payload.Creator)),
+		TokenProgram:     nil,
+		FirstSeenAt:      event.EventUnixTS,
+		CurrentStage:     stagePool,
+		ActiveMarketID:   activeMarketID,
+		ActiveMarketType: activeMarketType,
+	}); err != nil {
+		return err
+	}
+
+	if err := p.store.UpsertTokenMetadata(ctx, metadata); err != nil {
+		return err
+	}
+
+	baseMintDecimals := int32(payload.BaseMintDecimals)
+	quoteMintDecimals := int32(payload.QuoteMintDecimals)
+	if err := p.store.UpsertTokenMarket(ctx, store.TokenMarketRecord{
+		MarketID:          payload.Pool,
+		Mint:              mint,
+		Protocol:          protocolPumpAmm,
+		MarketType:        marketTypePumpAmmPool,
+		Pool:              ptrIfNotEmpty(payload.Pool),
+		BaseMint:          ptrIfNotEmpty(payload.BaseMint),
+		QuoteMint:         ptrIfNotEmpty(payload.QuoteMint),
+		BaseMintDecimals:  &baseMintDecimals,
+		QuoteMintDecimals: &quoteMintDecimals,
+		LPMint:            ptrIfNotEmpty(payload.LPMint),
+		StartedAt:         event.EventUnixTS,
+		CreateEventID:     event.EventID,
+	}); err != nil {
+		return err
+	}
+
+	tokenAmountRaw, quoteAmountRaw := trackedPairAmounts(
+		mint,
+		payload.BaseMint,
+		payload.QuoteMint,
+		payload.BaseAmountIn,
+		payload.QuoteAmountIn,
+	)
+
+	return p.insertActivity(ctx, event, mint, "create_pool", store.ActivityEventRecord{
+		EventID:        event.EventID,
+		Mint:           mint,
+		Protocol:       protocolPumpAmm,
+		EventType:      event.EventType,
+		ActivityType:   "create_pool",
+		MarketID:       activeMarketID,
+		MarketType:     activeMarketType,
+		UserAddress:    ptrIfNotEmpty(payload.Creator),
+		QuoteMint:      metadata.QuoteMint,
+		TokenAmountRaw: ptrIfNotEmpty(tokenAmountRaw),
+		QuoteAmountRaw: ptrIfNotEmpty(quoteAmountRaw),
+		TxSignature:    event.TxSignature,
+		Slot:           event.Slot,
+		EventUnixTS:    event.EventUnixTS,
+		RawEventSource: event.EventSource,
+	})
+}
+
+func (p *Projector) projectPumpAmmSwap(ctx context.Context, event *events.Envelope, payload events.PumpAmmSwapPayload) error {
+	trade, err := buildPumpAmmTrade(event, payload)
+	if err != nil {
+		return err
+	}
+	if err := p.store.InsertTradeEvent(ctx, trade); err != nil {
+		return err
+	}
+
+	return p.insertActivity(ctx, event, trade.Mint, "trade", store.ActivityEventRecord{
+		EventID:        trade.EventID,
+		Mint:           trade.Mint,
+		Protocol:       trade.Protocol,
+		EventType:      event.EventType,
+		ActivityType:   "trade",
+		MarketID:       ptrIfNotEmpty(trade.MarketID),
+		MarketType:     ptrIfNotEmpty(trade.MarketType),
+		UserAddress:    ptrIfNotEmpty(trade.UserAddress),
+		Side:           ptrIfNotEmpty(trade.Side),
+		QuoteMint:      ptrIfNotEmpty(trade.QuoteMint),
+		TokenAmountRaw: ptrIfNotEmpty(trade.TokenAmountRaw),
+		QuoteAmountRaw: ptrIfNotEmpty(trade.QuoteAmountRaw),
+		TxSignature:    trade.TxSignature,
+		Slot:           trade.Slot,
+		EventUnixTS:    trade.EventUnixTS,
+		RawEventSource: trade.RawEventSource,
+	})
+}
+
+func (p *Projector) projectPumpAmmLiquidity(ctx context.Context, event *events.Envelope, payload events.PumpAmmLiquidityPayload) error {
+	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
+	if mint == "" {
+		return fmt.Errorf("tracked mint missing for pumpamm liquidity event %s", event.EventID)
+	}
+
+	tokenAmountRaw, quoteAmountRaw := liquidityTrackedAmounts(mint, payload)
+	return p.insertActivity(ctx, event, mint, payload.Action, store.ActivityEventRecord{
+		EventID:        event.EventID,
+		Mint:           mint,
+		Protocol:       protocolPumpAmm,
+		EventType:      event.EventType,
+		ActivityType:   payload.Action,
+		MarketID:       ptrIfNotEmpty(payload.Pool),
+		MarketType:     ptrIfNotEmpty(marketTypePumpAmmPool),
+		UserAddress:    ptrIfNotEmpty(payload.User),
+		QuoteMint:      ptrIfNotEmpty(otherMint(mint, payload.BaseMint, payload.QuoteMint)),
+		TokenAmountRaw: ptrIfNotEmpty(tokenAmountRaw),
+		QuoteAmountRaw: ptrIfNotEmpty(quoteAmountRaw),
+		TxSignature:    event.TxSignature,
+		Slot:           event.Slot,
+		EventUnixTS:    event.EventUnixTS,
+		RawEventSource: event.EventSource,
+	})
+}
+
+func (p *Projector) insertActivity(
+	ctx context.Context,
+	event *events.Envelope,
+	mint string,
+	activityType string,
+	activity store.ActivityEventRecord,
+) error {
+	details, err := json.Marshal(event.Payload)
+	if err != nil {
+		return fmt.Errorf("marshal activity payload for event %s: %w", event.EventID, err)
+	}
+
+	activity.Mint = mint
+	activity.ActivityType = activityType
+	activity.Details = details
+
+	return p.store.InsertActivityEvent(ctx, activity)
+}
+
+func tokenMetadataFromCreatePool(eventID string, mint string, payload events.PumpAmmCreatePoolPayload) store.TokenMetadataRecord {
+	quoteMint := payload.QuoteMint
+	tokenDecimals := int32(payload.BaseMintDecimals)
+	quoteDecimals := int32(payload.QuoteMintDecimals)
+	if mint == payload.QuoteMint {
+		quoteMint = payload.BaseMint
+		tokenDecimals = int32(payload.QuoteMintDecimals)
+		quoteDecimals = int32(payload.BaseMintDecimals)
+	}
+
+	return store.TokenMetadataRecord{
+		Mint:          mint,
+		Decimals:      &tokenDecimals,
+		QuoteMint:     ptrIfNotEmpty(quoteMint),
+		QuoteDecimals: &quoteDecimals,
+		Creator:       firstNonNil(ptrIfNotEmpty(payload.CoinCreator), ptrIfNotEmpty(payload.Creator)),
+		SourceEventID: ptrIfNotEmpty(eventID),
+	}
+}
+
+func buildPumpAmmTrade(event *events.Envelope, payload events.PumpAmmSwapPayload) (store.TradeEventRecord, error) {
+	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
+	if mint == "" {
+		return store.TradeEventRecord{}, fmt.Errorf("tracked mint missing for pumpamm swap event %s", event.EventID)
+	}
+
+	trade := store.TradeEventRecord{
 		EventID:        event.EventID,
 		Mint:           mint,
 		MarketID:       payload.Pool,
@@ -208,7 +425,6 @@ func buildPumpAmmTrade(event *events.Envelope, payload events.PumpAmmSwapPayload
 		Protocol:       protocolPumpAmm,
 		IxName:         payload.IxName,
 		UserAddress:    payload.User,
-		Pool:           &pool,
 		TxSignature:    event.TxSignature,
 		Slot:           event.Slot,
 		EventUnixTS:    event.EventUnixTS,
@@ -223,240 +439,62 @@ func buildPumpAmmTrade(event *events.Envelope, payload events.PumpAmmSwapPayload
 			trade.Side = tokenSideBuy
 			tokenAmount, err := requiredAmount(payload.QuoteAmountOut, "quote_amount_out", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
 			quoteAmount, err := requiredAmount(payload.BaseAmountIn, "base_amount_in", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
-			trade.TokenAmount = tokenAmount
-			trade.QuoteAmount = quoteAmount
+			trade.TokenAmountRaw = tokenAmount
+			trade.QuoteAmountRaw = quoteAmount
 		case "buy", "buy_exact_quote_in":
 			trade.Side = tokenSideSell
 			tokenAmount, err := requiredAmount(payload.QuoteAmountIn, "quote_amount_in", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
 			quoteAmount, err := requiredAmount(payload.BaseAmountOut, "base_amount_out", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
-			trade.TokenAmount = tokenAmount
-			trade.QuoteAmount = quoteAmount
+			trade.TokenAmountRaw = tokenAmount
+			trade.QuoteAmountRaw = quoteAmount
 		default:
-			return store.TradeRecord{}, fmt.Errorf("unsupported pumpamm swap side %q for event %s", payload.Side, event.EventID)
+			return store.TradeEventRecord{}, fmt.Errorf("unsupported pumpamm swap side %s for event %s", payload.Side, event.EventID)
 		}
-	case mint == payload.BaseMint:
+	default:
 		trade.QuoteMint = payload.QuoteMint
 		switch payload.Side {
 		case "sell":
 			trade.Side = tokenSideSell
 			tokenAmount, err := requiredAmount(payload.BaseAmountIn, "base_amount_in", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
 			quoteAmount, err := requiredAmount(payload.QuoteAmountOut, "quote_amount_out", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
-			trade.TokenAmount = tokenAmount
-			trade.QuoteAmount = quoteAmount
+			trade.TokenAmountRaw = tokenAmount
+			trade.QuoteAmountRaw = quoteAmount
 		case "buy", "buy_exact_quote_in":
 			trade.Side = tokenSideBuy
 			tokenAmount, err := requiredAmount(payload.BaseAmountOut, "base_amount_out", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
 			quoteAmount, err := requiredAmount(payload.QuoteAmountIn, "quote_amount_in", event.EventID)
 			if err != nil {
-				return store.TradeRecord{}, err
+				return store.TradeEventRecord{}, err
 			}
-			trade.TokenAmount = tokenAmount
-			trade.QuoteAmount = quoteAmount
+			trade.TokenAmountRaw = tokenAmount
+			trade.QuoteAmountRaw = quoteAmount
 		default:
-			return store.TradeRecord{}, fmt.Errorf("unsupported pumpamm swap side %q for event %s", payload.Side, event.EventID)
+			return store.TradeEventRecord{}, fmt.Errorf("unsupported pumpamm swap side %s for event %s", payload.Side, event.EventID)
 		}
-	default:
-		return store.TradeRecord{}, fmt.Errorf(
-			"tracked mint %s does not match pumpamm swap pair %s/%s for event %s",
-			mint,
-			payload.BaseMint,
-			payload.QuoteMint,
-			event.EventID,
-		)
 	}
 
 	return trade, nil
-}
-
-func buildPumpfunCreateTimeline(event *events.Envelope, payload events.PumpfunCreatePayload) (store.TokenTimelineRecord, error) {
-	details, err := json.Marshal(map[string]any{
-		"ix_name":        payload.IxName,
-		"name":           payload.Name,
-		"symbol":         payload.Symbol,
-		"uri":            payload.URI,
-		"creator":        payload.Creator,
-		"user":           payload.User,
-		"token_program":  payload.TokenProgram,
-		"virtual_sol":    payload.VirtualSolReserves,
-		"virtual_token":  payload.VirtualTokenReserves,
-		"real_token":     payload.RealTokenReserves,
-		"total_supply":   payload.TokenTotalSupply,
-		"is_mayhem_mode": payload.IsMayhemMode,
-	})
-	if err != nil {
-		return store.TokenTimelineRecord{}, fmt.Errorf("marshal create timeline details: %w", err)
-	}
-
-	return store.TokenTimelineRecord{
-		EventID:        event.EventID,
-		Mint:           payload.Mint,
-		Protocol:       event.Protocol,
-		EventType:      event.EventType,
-		TimelineType:   "create",
-		MarketID:       ptrIfNotEmpty(payload.BondingCurve),
-		MarketType:     ptrIfNotEmpty(marketTypePumpfunCurve),
-		UserAddress:    ptrIfNotEmpty(payload.Creator),
-		TxSignature:    event.TxSignature,
-		Slot:           event.Slot,
-		EventUnixTS:    event.EventUnixTS,
-		RawEventSource: event.EventSource,
-		Details:        details,
-	}, nil
-}
-
-func buildPumpAmmCreatePoolTimeline(event *events.Envelope, payload events.PumpAmmCreatePoolPayload) (store.TokenTimelineRecord, error) {
-	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
-	details, err := json.Marshal(map[string]any{
-		"creator":           payload.Creator,
-		"base_mint":         payload.BaseMint,
-		"quote_mint":        payload.QuoteMint,
-		"lp_mint":           payload.LPMint,
-		"base_amount_in":    payload.BaseAmountIn,
-		"quote_amount_in":   payload.QuoteAmountIn,
-		"initial_liquidity": payload.InitialLiquidity,
-		"coin_creator":      payload.CoinCreator,
-		"is_mayhem_mode":    payload.IsMayhemMode,
-	})
-	if err != nil {
-		return store.TokenTimelineRecord{}, fmt.Errorf("marshal create_pool timeline details: %w", err)
-	}
-
-	return store.TokenTimelineRecord{
-		EventID:        event.EventID,
-		Mint:           mint,
-		Protocol:       event.Protocol,
-		EventType:      event.EventType,
-		TimelineType:   "create_pool",
-		MarketID:       ptrIfNotEmpty(payload.Pool),
-		MarketType:     ptrIfNotEmpty(marketTypePumpAmmPool),
-		UserAddress:    ptrIfNotEmpty(payload.Creator),
-		TxSignature:    event.TxSignature,
-		Slot:           event.Slot,
-		EventUnixTS:    event.EventUnixTS,
-		RawEventSource: event.EventSource,
-		Details:        details,
-	}, nil
-}
-
-func buildPumpfunMigrateTimeline(event *events.Envelope, payload events.PumpfunMigratePayload) (store.TokenTimelineRecord, error) {
-	details, err := json.Marshal(map[string]any{
-		"user":           payload.User,
-		"bonding_curve":  payload.BondingCurve,
-		"pool":           payload.Pool,
-		"mint_amount":    payload.MintAmount,
-		"sol_amount":     payload.SolAmount,
-		"migration_fee":  payload.PoolMigrationFee,
-		"lp_mint":        payload.LPMint,
-		"token_program":  payload.TokenProgram,
-		"withdraw_auth":  payload.WithdrawAuthority,
-		"pool_authority": payload.PoolAuthority,
-	})
-	if err != nil {
-		return store.TokenTimelineRecord{}, fmt.Errorf("marshal migrate timeline details: %w", err)
-	}
-
-	return store.TokenTimelineRecord{
-		EventID:        event.EventID,
-		Mint:           payload.Mint,
-		Protocol:       event.Protocol,
-		EventType:      event.EventType,
-		TimelineType:   "migrate",
-		MarketID:       ptrIfNotEmpty(payload.Pool),
-		MarketType:     ptrIfNotEmpty(marketTypePumpAmmPool),
-		UserAddress:    ptrIfNotEmpty(payload.User),
-		TxSignature:    event.TxSignature,
-		Slot:           event.Slot,
-		EventUnixTS:    event.EventUnixTS,
-		RawEventSource: event.EventSource,
-		Details:        details,
-	}, nil
-}
-
-func buildTradeTimeline(event *events.Envelope, trade store.TradeRecord) (store.TokenTimelineRecord, error) {
-	details, err := json.Marshal(map[string]any{
-		"ix_name": trade.IxName,
-	})
-	if err != nil {
-		return store.TokenTimelineRecord{}, fmt.Errorf("marshal trade timeline details: %w", err)
-	}
-
-	return store.TokenTimelineRecord{
-		EventID:        event.EventID,
-		Mint:           trade.Mint,
-		Protocol:       event.Protocol,
-		EventType:      event.EventType,
-		TimelineType:   "trade",
-		MarketID:       ptrIfNotEmpty(trade.MarketID),
-		MarketType:     ptrIfNotEmpty(trade.MarketType),
-		UserAddress:    ptrIfNotEmpty(trade.UserAddress),
-		Side:           ptrIfNotEmpty(trade.Side),
-		QuoteMint:      ptrIfNotEmpty(trade.QuoteMint),
-		TokenAmount:    ptrIfNotEmpty(trade.TokenAmount),
-		QuoteAmount:    ptrIfNotEmpty(trade.QuoteAmount),
-		TxSignature:    trade.TxSignature,
-		Slot:           trade.Slot,
-		EventUnixTS:    trade.EventUnixTS,
-		RawEventSource: trade.RawEventSource,
-		Details:        details,
-	}, nil
-}
-
-func buildPumpAmmLiquidityTimeline(event *events.Envelope, payload events.PumpAmmLiquidityPayload) (store.TokenTimelineRecord, error) {
-	mint := trackedMint(event, payload.BaseMint, payload.QuoteMint)
-	details, err := json.Marshal(map[string]any{
-		"action":              payload.Action,
-		"pool":                payload.Pool,
-		"base_mint":           payload.BaseMint,
-		"quote_mint":          payload.QuoteMint,
-		"lp_mint":             payload.LPMint,
-		"lp_token_amount_in":  payload.LPTokenAmountIn,
-		"lp_token_amount_out": payload.LPTokenAmountOut,
-		"base_amount_in":      payload.BaseAmountIn,
-		"quote_amount_in":     payload.QuoteAmountIn,
-		"base_amount_out":     payload.BaseAmountOut,
-		"quote_amount_out":    payload.QuoteAmountOut,
-		"lp_mint_supply":      payload.LPMintSupply,
-	})
-	if err != nil {
-		return store.TokenTimelineRecord{}, fmt.Errorf("marshal liquidity timeline details: %w", err)
-	}
-
-	return store.TokenTimelineRecord{
-		EventID:        event.EventID,
-		Mint:           mint,
-		Protocol:       event.Protocol,
-		EventType:      event.EventType,
-		TimelineType:   "liquidity",
-		MarketID:       ptrIfNotEmpty(payload.Pool),
-		MarketType:     ptrIfNotEmpty(marketTypePumpAmmPool),
-		UserAddress:    ptrIfNotEmpty(payload.User),
-		TxSignature:    event.TxSignature,
-		Slot:           event.Slot,
-		EventUnixTS:    event.EventUnixTS,
-		RawEventSource: event.EventSource,
-		Details:        details,
-	}, nil
 }
 
 func trackedMint(event *events.Envelope, baseMint string, quoteMint string) string {
@@ -465,13 +503,53 @@ func trackedMint(event *events.Envelope, baseMint string, quoteMint string) stri
 	}
 
 	switch {
-	case baseMint == solMint && quoteMint != "":
+	case baseMint == store.SolMint && quoteMint != "":
 		return quoteMint
-	case quoteMint == solMint && baseMint != "":
+	case quoteMint == store.SolMint && baseMint != "":
 		return baseMint
 	default:
 		return ""
 	}
+}
+
+func trackedPairAmounts(mint string, baseMint string, quoteMint string, baseAmount string, quoteAmount string) (string, string) {
+	if mint == quoteMint {
+		return quoteAmount, baseAmount
+	}
+	return baseAmount, quoteAmount
+}
+
+func liquidityTrackedAmounts(mint string, payload events.PumpAmmLiquidityPayload) (string, string) {
+	switch payload.Action {
+	case "deposit":
+		return trackedPairAmounts(
+			mint,
+			payload.BaseMint,
+			payload.QuoteMint,
+			stringValue(payload.BaseAmountIn),
+			stringValue(payload.QuoteAmountIn),
+		)
+	case "withdraw":
+		return trackedPairAmounts(
+			mint,
+			payload.BaseMint,
+			payload.QuoteMint,
+			stringValue(payload.BaseAmountOut),
+			stringValue(payload.QuoteAmountOut),
+		)
+	default:
+		return "", ""
+	}
+}
+
+func otherMint(mint string, baseMint string, quoteMint string) string {
+	if mint == baseMint {
+		return quoteMint
+	}
+	if mint == quoteMint {
+		return baseMint
+	}
+	return ""
 }
 
 func requiredAmount(value *string, field string, eventID string) (string, error) {
@@ -487,4 +565,36 @@ func ptrIfNotEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func int32Ptr(value int32) *int32 {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func optionalInt32FromUint32(value *uint32) *int32 {
+	if value == nil {
+		return nil
+	}
+	converted := int32(*value)
+	return &converted
+}
+
+func firstNonNil(values ...*string) *string {
+	for _, value := range values {
+		if value != nil && *value != "" {
+			return value
+		}
+	}
+	return nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

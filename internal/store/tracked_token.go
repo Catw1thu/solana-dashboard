@@ -7,7 +7,7 @@ import (
 	"solana-dashboard-go/internal/db"
 )
 
-const listTrackedTokensSQL = `
+const trackedTokensSelectSQL = `
 select
     tt.mint,
     tt.creator,
@@ -80,8 +80,16 @@ left join lateral (
     order by t.event_time desc, t.created_at desc
     limit 1
 ) lt on true
+`
+
+const listTrackedTokensSQL = trackedTokensSelectSQL + `
 order by tt.accepted_at desc
 limit $1
+`
+
+const findTrackedTokenByMintSQL = trackedTokensSelectSQL + `
+where tt.mint = $1
+limit 1
 `
 
 type TrackedTokenRecord struct {
@@ -118,9 +126,35 @@ func (s *TrackedTokenStore) ListTrackedTokens(ctx context.Context, limit int) ([
 	if err != nil {
 		return nil, fmt.Errorf("list tracked tokens: %w", err)
 	}
+	return scanTrackedTokenRows(rows, limit)
+}
+
+func (s *TrackedTokenStore) FindTrackedTokenByMint(ctx context.Context, mint string) (*TrackedTokenRecord, error) {
+	rows, err := s.db.Pool.Query(ctx, findTrackedTokenByMintSQL, mint)
+	if err != nil {
+		return nil, fmt.Errorf("find tracked token by mint=%s: %w", mint, err)
+	}
+	items, err := scanTrackedTokenRows(rows, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	return &items[0], nil
+}
+
+type trackedTokenRows interface {
+	Close()
+	Err() error
+	Next() bool
+	Scan(dest ...any) error
+}
+
+func scanTrackedTokenRows(rows trackedTokenRows, capacity int) ([]TrackedTokenRecord, error) {
 	defer rows.Close()
 
-	items := make([]TrackedTokenRecord, 0, limit)
+	items := make([]TrackedTokenRecord, 0, capacity)
 	for rows.Next() {
 		var (
 			record              TrackedTokenRecord

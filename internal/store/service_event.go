@@ -64,7 +64,7 @@ limit $2
 
 const loadProjectionCheckpointSQL = `
 select last_log_id
-from projection_checkpoints
+from projection_offsets
 where projector_name = $1
 `
 
@@ -145,7 +145,7 @@ limit 1
 `
 
 const saveProjectionCheckpointSQL = `
-insert into projection_checkpoints (projector_name, last_log_id, updated_at)
+insert into projection_offsets (projector_name, last_log_id, updated_at)
 values ($1, $2, now())
 on conflict (projector_name) do update set
     last_log_id = excluded.last_log_id,

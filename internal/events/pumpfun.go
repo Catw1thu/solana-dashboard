@@ -33,21 +33,22 @@ type PumpfunTradeInstructionArgs struct {
 }
 
 type PumpfunCreatePayload struct {
-	IxName               string `json:"ix_name"`
-	Mint                 string `json:"mint"`
-	BondingCurve         string `json:"bonding_curve"`
-	User                 string `json:"user"`
-	Creator              string `json:"creator"`
-	Name                 string `json:"name"`
-	Symbol               string `json:"symbol"`
-	URI                  string `json:"uri"`
-	TokenProgram         string `json:"token_program"`
-	VirtualTokenReserves string `json:"virtual_token_reserves"`
-	VirtualSolReserves   string `json:"virtual_sol_reserves"`
-	RealTokenReserves    string `json:"real_token_reserves"`
-	TokenTotalSupply     string `json:"token_total_supply"`
-	IsMayhemMode         bool   `json:"is_mayhem_mode"`
-	IsCashbackEnabled    bool   `json:"is_cashback_enabled"`
+	IxName               string  `json:"ix_name"`
+	Mint                 string  `json:"mint"`
+	BondingCurve         string  `json:"bonding_curve"`
+	User                 string  `json:"user"`
+	Creator              string  `json:"creator"`
+	Name                 string  `json:"name"`
+	Symbol               string  `json:"symbol"`
+	URI                  string  `json:"uri"`
+	TokenProgram         string  `json:"token_program"`
+	VirtualTokenReserves string  `json:"virtual_token_reserves"`
+	VirtualSolReserves   string  `json:"virtual_sol_reserves"`
+	RealTokenReserves    string  `json:"real_token_reserves"`
+	TokenTotalSupply     string  `json:"token_total_supply"`
+	IsMayhemMode         bool    `json:"is_mayhem_mode"`
+	IsCashbackEnabled    bool    `json:"is_cashback_enabled"`
+	MintDecimals         *uint32 `json:"mint_decimals,omitempty"`
 }
 
 type PumpfunMigratePayload struct {

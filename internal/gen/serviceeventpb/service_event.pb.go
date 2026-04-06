@@ -787,6 +787,7 @@ type PumpfunCreatePayload struct {
 	TokenTotalSupply     string                 `protobuf:"bytes,13,opt,name=token_total_supply,json=tokenTotalSupply,proto3" json:"token_total_supply,omitempty"`
 	IsMayhemMode         bool                   `protobuf:"varint,14,opt,name=is_mayhem_mode,json=isMayhemMode,proto3" json:"is_mayhem_mode,omitempty"`
 	IsCashbackEnabled    bool                   `protobuf:"varint,15,opt,name=is_cashback_enabled,json=isCashbackEnabled,proto3" json:"is_cashback_enabled,omitempty"`
+	MintDecimals         *uint32                `protobuf:"varint,16,opt,name=mint_decimals,json=mintDecimals,proto3,oneof" json:"mint_decimals,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -924,6 +925,13 @@ func (x *PumpfunCreatePayload) GetIsCashbackEnabled() bool {
 		return x.IsCashbackEnabled
 	}
 	return false
+}
+
+func (x *PumpfunCreatePayload) GetMintDecimals() uint32 {
+	if x != nil && x.MintDecimals != nil {
+		return *x.MintDecimals
+	}
+	return 0
 }
 
 type PumpfunMigratePayload struct {
@@ -1399,20 +1407,22 @@ func (x *PumpAmmCreatePoolInstructionArgs) GetIsCashbackCoin() bool {
 }
 
 type PumpAmmCreatePoolPayload struct {
-	state            protoimpl.MessageState            `protogen:"open.v1"`
-	Pool             string                            `protobuf:"bytes,1,opt,name=pool,proto3" json:"pool,omitempty"`
-	Creator          string                            `protobuf:"bytes,2,opt,name=creator,proto3" json:"creator,omitempty"`
-	BaseMint         string                            `protobuf:"bytes,3,opt,name=base_mint,json=baseMint,proto3" json:"base_mint,omitempty"`
-	QuoteMint        string                            `protobuf:"bytes,4,opt,name=quote_mint,json=quoteMint,proto3" json:"quote_mint,omitempty"`
-	LpMint           string                            `protobuf:"bytes,5,opt,name=lp_mint,json=lpMint,proto3" json:"lp_mint,omitempty"`
-	BaseAmountIn     string                            `protobuf:"bytes,6,opt,name=base_amount_in,json=baseAmountIn,proto3" json:"base_amount_in,omitempty"`
-	QuoteAmountIn    string                            `protobuf:"bytes,7,opt,name=quote_amount_in,json=quoteAmountIn,proto3" json:"quote_amount_in,omitempty"`
-	InitialLiquidity string                            `protobuf:"bytes,8,opt,name=initial_liquidity,json=initialLiquidity,proto3" json:"initial_liquidity,omitempty"`
-	CoinCreator      string                            `protobuf:"bytes,9,opt,name=coin_creator,json=coinCreator,proto3" json:"coin_creator,omitempty"`
-	IsMayhemMode     bool                              `protobuf:"varint,10,opt,name=is_mayhem_mode,json=isMayhemMode,proto3" json:"is_mayhem_mode,omitempty"`
-	InstructionArgs  *PumpAmmCreatePoolInstructionArgs `protobuf:"bytes,11,opt,name=instruction_args,json=instructionArgs,proto3" json:"instruction_args,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state             protoimpl.MessageState            `protogen:"open.v1"`
+	Pool              string                            `protobuf:"bytes,1,opt,name=pool,proto3" json:"pool,omitempty"`
+	Creator           string                            `protobuf:"bytes,2,opt,name=creator,proto3" json:"creator,omitempty"`
+	BaseMint          string                            `protobuf:"bytes,3,opt,name=base_mint,json=baseMint,proto3" json:"base_mint,omitempty"`
+	QuoteMint         string                            `protobuf:"bytes,4,opt,name=quote_mint,json=quoteMint,proto3" json:"quote_mint,omitempty"`
+	LpMint            string                            `protobuf:"bytes,5,opt,name=lp_mint,json=lpMint,proto3" json:"lp_mint,omitempty"`
+	BaseAmountIn      string                            `protobuf:"bytes,6,opt,name=base_amount_in,json=baseAmountIn,proto3" json:"base_amount_in,omitempty"`
+	QuoteAmountIn     string                            `protobuf:"bytes,7,opt,name=quote_amount_in,json=quoteAmountIn,proto3" json:"quote_amount_in,omitempty"`
+	InitialLiquidity  string                            `protobuf:"bytes,8,opt,name=initial_liquidity,json=initialLiquidity,proto3" json:"initial_liquidity,omitempty"`
+	CoinCreator       string                            `protobuf:"bytes,9,opt,name=coin_creator,json=coinCreator,proto3" json:"coin_creator,omitempty"`
+	IsMayhemMode      bool                              `protobuf:"varint,10,opt,name=is_mayhem_mode,json=isMayhemMode,proto3" json:"is_mayhem_mode,omitempty"`
+	InstructionArgs   *PumpAmmCreatePoolInstructionArgs `protobuf:"bytes,11,opt,name=instruction_args,json=instructionArgs,proto3" json:"instruction_args,omitempty"`
+	BaseMintDecimals  uint32                            `protobuf:"varint,12,opt,name=base_mint_decimals,json=baseMintDecimals,proto3" json:"base_mint_decimals,omitempty"`
+	QuoteMintDecimals uint32                            `protobuf:"varint,13,opt,name=quote_mint_decimals,json=quoteMintDecimals,proto3" json:"quote_mint_decimals,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PumpAmmCreatePoolPayload) Reset() {
@@ -1520,6 +1530,20 @@ func (x *PumpAmmCreatePoolPayload) GetInstructionArgs() *PumpAmmCreatePoolInstru
 		return x.InstructionArgs
 	}
 	return nil
+}
+
+func (x *PumpAmmCreatePoolPayload) GetBaseMintDecimals() uint32 {
+	if x != nil {
+		return x.BaseMintDecimals
+	}
+	return 0
+}
+
+func (x *PumpAmmCreatePoolPayload) GetQuoteMintDecimals() uint32 {
+	if x != nil {
+		return x.QuoteMintDecimals
+	}
+	return 0
 }
 
 type PumpAmmLiquidityInstructionArgs struct {
@@ -2090,7 +2114,7 @@ const file_service_event_proto_rawDesc = "" +
 	"\vmayhem_mode\x18\x13 \x01(\bR\n" +
 	"mayhemMode\x12\x1a\n" +
 	"\bcashback\x18\x14 \x01(\tR\bcashback\x12W\n" +
-	"\x10instruction_args\x18\x15 \x01(\v2,.serviceevent.v1.PumpfunTradeInstructionArgsR\x0finstructionArgs\"\x95\x04\n" +
+	"\x10instruction_args\x18\x15 \x01(\v2,.serviceevent.v1.PumpfunTradeInstructionArgsR\x0finstructionArgs\"\xd1\x04\n" +
 	"\x14PumpfunCreatePayload\x12\x17\n" +
 	"\aix_name\x18\x01 \x01(\tR\x06ixName\x12\x12\n" +
 	"\x04mint\x18\x02 \x01(\tR\x04mint\x12#\n" +
@@ -2107,7 +2131,9 @@ const file_service_event_proto_rawDesc = "" +
 	"\x13real_token_reserves\x18\f \x01(\tR\x11realTokenReserves\x12,\n" +
 	"\x12token_total_supply\x18\r \x01(\tR\x10tokenTotalSupply\x12$\n" +
 	"\x0eis_mayhem_mode\x18\x0e \x01(\bR\fisMayhemMode\x12.\n" +
-	"\x13is_cashback_enabled\x18\x0f \x01(\bR\x11isCashbackEnabled\"\xcf\x03\n" +
+	"\x13is_cashback_enabled\x18\x0f \x01(\bR\x11isCashbackEnabled\x12(\n" +
+	"\rmint_decimals\x18\x10 \x01(\rH\x00R\fmintDecimals\x88\x01\x01B\x10\n" +
+	"\x0e_mint_decimals\"\xcf\x03\n" +
 	"\x15PumpfunMigratePayload\x12\x12\n" +
 	"\x04mint\x18\x01 \x01(\tR\x04mint\x12\x12\n" +
 	"\x04user\x18\x02 \x01(\tR\x04user\x12#\n" +
@@ -2168,7 +2194,7 @@ const file_service_event_proto_rawDesc = "" +
 	"\fcoin_creator\x18\x02 \x01(\tR\vcoinCreator\x12$\n" +
 	"\x0eis_mayhem_mode\x18\x03 \x01(\bR\fisMayhemMode\x12-\n" +
 	"\x10is_cashback_coin\x18\x04 \x01(\bH\x00R\x0eisCashbackCoin\x88\x01\x01B\x13\n" +
-	"\x11_is_cashback_coin\"\xbf\x03\n" +
+	"\x11_is_cashback_coin\"\x9d\x04\n" +
 	"\x18PumpAmmCreatePoolPayload\x12\x12\n" +
 	"\x04pool\x18\x01 \x01(\tR\x04pool\x12\x18\n" +
 	"\acreator\x18\x02 \x01(\tR\acreator\x12\x1b\n" +
@@ -2182,7 +2208,9 @@ const file_service_event_proto_rawDesc = "" +
 	"\fcoin_creator\x18\t \x01(\tR\vcoinCreator\x12$\n" +
 	"\x0eis_mayhem_mode\x18\n" +
 	" \x01(\bR\fisMayhemMode\x12\\\n" +
-	"\x10instruction_args\x18\v \x01(\v21.serviceevent.v1.PumpAmmCreatePoolInstructionArgsR\x0finstructionArgs\"\xe6\x03\n" +
+	"\x10instruction_args\x18\v \x01(\v21.serviceevent.v1.PumpAmmCreatePoolInstructionArgsR\x0finstructionArgs\x12,\n" +
+	"\x12base_mint_decimals\x18\f \x01(\rR\x10baseMintDecimals\x12.\n" +
+	"\x13quote_mint_decimals\x18\r \x01(\rR\x11quoteMintDecimals\"\xe6\x03\n" +
 	"\x1fPumpAmmLiquidityInstructionArgs\x120\n" +
 	"\x12lp_token_amount_in\x18\x01 \x01(\tH\x00R\x0flpTokenAmountIn\x88\x01\x01\x122\n" +
 	"\x13lp_token_amount_out\x18\x02 \x01(\tH\x01R\x10lpTokenAmountOut\x88\x01\x01\x120\n" +
@@ -2345,6 +2373,7 @@ func file_service_event_proto_init() {
 	file_service_event_proto_msgTypes[0].OneofWrappers = []any{}
 	file_service_event_proto_msgTypes[1].OneofWrappers = []any{}
 	file_service_event_proto_msgTypes[2].OneofWrappers = []any{}
+	file_service_event_proto_msgTypes[4].OneofWrappers = []any{}
 	file_service_event_proto_msgTypes[6].OneofWrappers = []any{}
 	file_service_event_proto_msgTypes[7].OneofWrappers = []any{}
 	file_service_event_proto_msgTypes[8].OneofWrappers = []any{}

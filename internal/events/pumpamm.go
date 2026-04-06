@@ -31,17 +31,19 @@ type PumpAmmSwapInstructionArgs struct {
 }
 
 type PumpAmmCreatePoolPayload struct {
-	Pool             string                           `json:"pool"`
-	Creator          string                           `json:"creator"`
-	BaseMint         string                           `json:"base_mint"`
-	QuoteMint        string                           `json:"quote_mint"`
-	LPMint           string                           `json:"lp_mint"`
-	BaseAmountIn     string                           `json:"base_amount_in"`
-	QuoteAmountIn    string                           `json:"quote_amount_in"`
-	InitialLiquidity string                           `json:"initial_liquidity"`
-	CoinCreator      string                           `json:"coin_creator"`
-	IsMayhemMode     bool                             `json:"is_mayhem_mode"`
-	InstructionArgs  PumpAmmCreatePoolInstructionArgs `json:"instruction_args"`
+	Pool              string                           `json:"pool"`
+	Creator           string                           `json:"creator"`
+	BaseMint          string                           `json:"base_mint"`
+	QuoteMint         string                           `json:"quote_mint"`
+	LPMint            string                           `json:"lp_mint"`
+	BaseAmountIn      string                           `json:"base_amount_in"`
+	QuoteAmountIn     string                           `json:"quote_amount_in"`
+	InitialLiquidity  string                           `json:"initial_liquidity"`
+	CoinCreator       string                           `json:"coin_creator"`
+	IsMayhemMode      bool                             `json:"is_mayhem_mode"`
+	InstructionArgs   PumpAmmCreatePoolInstructionArgs `json:"instruction_args"`
+	BaseMintDecimals  uint32                           `json:"base_mint_decimals"`
+	QuoteMintDecimals uint32                           `json:"quote_mint_decimals"`
 }
 
 type PumpAmmCreatePoolInstructionArgs struct {
