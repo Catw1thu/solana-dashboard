@@ -66,6 +66,7 @@ struct PumpfunCreatePayload {
     token_total_supply: String,
     is_mayhem_mode: bool,
     is_cashback_enabled: bool,
+    mint_decimals: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,6 +139,8 @@ struct PumpAmmCreatePoolPayload {
     coin_creator: String,
     is_mayhem_mode: bool,
     instruction_args: PumpAmmCreatePoolInstructionArgs,
+    base_mint_decimals: u8,
+    quote_mint_decimals: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +267,7 @@ fn build_payload(event: &ServiceEventEnvelope) -> Result<event_envelope::Payload
                     token_total_supply: payload.token_total_supply,
                     is_mayhem_mode: payload.is_mayhem_mode,
                     is_cashback_enabled: payload.is_cashback_enabled,
+                    mint_decimals: payload.mint_decimals.map(u32::from),
                 },
             ))
         }
@@ -337,6 +341,8 @@ fn build_payload(event: &ServiceEventEnvelope) -> Result<event_envelope::Payload
                     initial_liquidity: payload.initial_liquidity,
                     coin_creator: payload.coin_creator,
                     is_mayhem_mode: payload.is_mayhem_mode,
+                    base_mint_decimals: payload.base_mint_decimals as u32,
+                    quote_mint_decimals: payload.quote_mint_decimals as u32,
                     instruction_args: Some(pb::PumpAmmCreatePoolInstructionArgs {
                         index: payload.instruction_args.index as u32,
                         coin_creator: payload.instruction_args.coin_creator,

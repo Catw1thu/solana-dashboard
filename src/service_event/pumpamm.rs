@@ -58,6 +58,8 @@ struct PumpAmmCreatePoolPayload {
     coin_creator: String,
     is_mayhem_mode: bool,
     instruction_args: PumpAmmCreatePoolInstructionArgs,
+    base_mint_decimals: u8,
+    quote_mint_decimals: u8,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,6 +166,8 @@ pub fn build_pumpamm_create_pool_service_event(
         initial_liquidity: creation.initial_liquidity.to_string(),
         coin_creator: creation.coin_creator.clone(),
         is_mayhem_mode: creation.is_mayhem_mode,
+        base_mint_decimals: creation.event.base_mint_decimals,
+        quote_mint_decimals: creation.event.quote_mint_decimals,
         instruction_args: match &creation.instruction {
             PumpAmmInstruction::CreatePool(ix) => PumpAmmCreatePoolInstructionArgs {
                 index: ix.index,
@@ -558,6 +562,12 @@ mod tests {
             Some(creation.lp_mint.as_str())
         );
         assert!(service_event.event_id.contains(":pumpamm:create_pool:"));
+
+        // Verify decimals are correctly parsed from event bytes
+        let base_decimals = service_event.payload.get("base_mint_decimals").unwrap();
+        let quote_decimals = service_event.payload.get("quote_mint_decimals").unwrap();
+        assert_eq!(base_decimals.as_u64(), Some(6));
+        assert_eq!(quote_decimals.as_u64(), Some(9));
     }
 
     #[test]

@@ -110,6 +110,7 @@ message PumpfunCreatePayload {
   string token_total_supply = 13;
   bool is_mayhem_mode = 14;
   bool is_cashback_enabled = 15;
+  optional uint32 mint_decimals = 16;
 }
 
 message PumpfunMigratePayload {
@@ -177,6 +178,8 @@ message PumpAmmCreatePoolPayload {
   string coin_creator = 9;
   bool is_mayhem_mode = 10;
   PumpAmmCreatePoolInstructionArgs instruction_args = 11;
+  uint32 base_mint_decimals = 12;
+  uint32 quote_mint_decimals = 13;
 }
 
 message PumpAmmLiquidityInstructionArgs {

@@ -7,6 +7,7 @@ use crate::{
     pumpfun::model::{ParsedCreate, ParsedMigrate, ParsedTrade, PumpfunInstruction},
     transaction_view::TransactionView,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -60,6 +61,7 @@ struct PumpfunCreatePayload {
     token_total_supply: String,
     is_mayhem_mode: bool,
     is_cashback_enabled: bool,
+    mint_decimals: Option<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -156,6 +158,7 @@ pub fn build_pumpfun_create_service_event(
         token_total_supply: create.token_total_supply.to_string(),
         is_mayhem_mode: create.is_mayhem_mode,
         is_cashback_enabled: create.is_cashback_enabled,
+        mint_decimals: extract_mint_decimals(view, &create.mint),
     };
     let protocol = ServiceEventProtocol::Pumpfun;
     let event_type = ServiceEventType::Create;
@@ -257,6 +260,52 @@ fn build_instruction_path(
             inner_index: Some(*inner_index),
         },
     }
+}
+
+/// SPL Token `InitializeMint2` instruction type index.
+const INITIALIZE_MINT2_IX_TYPE: u8 = 20;
+
+const SPL_TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SPL_TOKEN_2022_PROGRAM_ID: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/// Extract `decimals` from the `InitializeMint2` inner instruction whose first
+/// account matches `mint`.
+///
+/// `InitializeMint2` data layout:
+///   [0]    – instruction type (20)
+///   [1]    – decimals (u8)
+///   [2..34] – mint_authority (Pubkey)
+///   [34]   – freeze_authority option (0 or 1)
+///   [35..67] – freeze_authority (Pubkey), present only if option == 1
+fn extract_mint_decimals(view: &TransactionView, mint: &str) -> Option<u8> {
+    for group in &view.inner_instruction_groups {
+        for ix in &group.instructions {
+            if ix.program_id != SPL_TOKEN_PROGRAM_ID
+                && ix.program_id != SPL_TOKEN_2022_PROGRAM_ID
+            {
+                continue;
+            }
+
+            // Quick check via prefix to avoid full base64 decode
+            if ix.data_prefix.first().copied() != Some(INITIALIZE_MINT2_IX_TYPE) {
+                continue;
+            }
+
+            // The first account must be the mint
+            if ix.account_pubkeys.first().map(|s| s.as_str()) != Some(mint) {
+                continue;
+            }
+
+            let Ok(data) = STANDARD.decode(&ix.data_base64) else {
+                continue;
+            };
+
+            if data.len() >= 2 && data[0] == INITIALIZE_MINT2_IX_TYPE {
+                return Some(data[1]);
+            }
+        }
+    }
+    None
 }
 
 fn build_payload(trade: &ParsedTrade) -> PumpfunTradePayload {
@@ -398,6 +447,10 @@ mod tests {
             Some(create.creator.as_str())
         );
         assert!(service_event.event_id.contains(":pumpfun:create:"));
+
+        // Verify mint_decimals is extracted from InitializeMint2 inner instruction
+        let mint_decimals = service_event.payload.get("mint_decimals").unwrap();
+        assert_eq!(mint_decimals.as_u64(), Some(6));
     }
 
     #[test]
