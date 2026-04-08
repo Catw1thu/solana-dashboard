@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, Sun, Moon, Search, X } from "lucide-react";
+import { Activity, SunMoon, Search, X } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { API } from "../config/api";
@@ -11,12 +11,12 @@ interface SearchResult {
   mint: string;
   name: string | null;
   symbol: string | null;
-  image: string | null;
+  image_uri: string | null;
   price: number | null;
 }
 
 export const Header = () => {
-  const { theme, toggleTheme } = useTheme();
+  const { toggleTheme } = useTheme();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -36,13 +36,22 @@ export const Header = () => {
     }
     setIsLoading(true);
     try {
-      const res = await fetch(API.search(q));
+      const res = await fetch(API.searchTokens(q, 8), {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error(`search request failed: ${res.status}`);
+      }
       const data = await res.json();
-      setResults(data);
-      setIsOpen(data.length > 0);
+      const tokens = Array.isArray(data.tokens)
+        ? (data.tokens as SearchResult[])
+        : [];
+      setResults(tokens);
+      setIsOpen(tokens.length > 0);
       setSelectedIndex(-1);
     } catch {
       setResults([]);
+      setIsOpen(false);
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +67,7 @@ export const Header = () => {
     setQuery("");
     setIsOpen(false);
     setResults([]);
-    router.push(`/pair/${mint}`);
+    router.push(`/token/${mint}`);
   };
 
   // Keyboard navigation
@@ -101,6 +110,14 @@ export const Header = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   return (
     <header className="sticky top-0 z-50 border-b border-(--border-primary) bg-(--bg-primary)/80 backdrop-blur-xl">
       <div className="w-full flex h-14 items-center justify-between px-6 gap-4">
@@ -130,7 +147,7 @@ export const Header = () => {
               onFocus={() => {
                 if (results.length > 0) setIsOpen(true);
               }}
-              placeholder="Search token name or mint..."
+              placeholder="搜索全局代币名或 Mint..."
               className="w-full h-9 pl-9 pr-8 rounded-lg border border-(--border-primary) bg-(--bg-secondary) text-sm text-(--text-primary) placeholder:text-(--text-muted) outline-none focus:border-(--accent-green)/50 focus:ring-1 focus:ring-(--accent-green)/20 transition-all"
             />
             {query && (
@@ -153,11 +170,11 @@ export const Header = () => {
             <div className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-(--border-primary) bg-(--bg-secondary) shadow-xl overflow-hidden z-60">
               {isLoading ? (
                 <div className="px-4 py-3 text-sm text-(--text-muted) text-center">
-                  Searching...
+                  搜索中...
                 </div>
               ) : results.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-(--text-muted) text-center">
-                  No results found
+                  没有匹配结果
                 </div>
               ) : (
                 <div className="max-h-80 overflow-y-auto">
@@ -173,9 +190,9 @@ export const Header = () => {
                       }`}
                     >
                       {/* Avatar */}
-                      {r.image ? (
+                      {r.image_uri ? (
                         <img
-                          src={r.image}
+                          src={r.image_uri}
                           alt={r.symbol || ""}
                           className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-(--border-primary)"
                           onError={(e) => {
@@ -222,15 +239,9 @@ export const Header = () => {
           <button
             onClick={toggleTheme}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-(--border-primary) bg-(--bg-secondary) hover:bg-(--bg-tertiary) transition-colors"
-            title={
-              theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"
-            }
+            title="Toggle theme"
           >
-            {theme === "dark" ? (
-              <Sun className="h-4 w-4 text-(--text-muted)" />
-            ) : (
-              <Moon className="h-4 w-4 text-(--text-muted)" />
-            )}
+            <SunMoon className="h-4 w-4 text-(--text-muted)" />
           </button>
         </div>
       </div>

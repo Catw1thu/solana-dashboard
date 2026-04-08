@@ -1,35 +1,47 @@
 "use client";
 
 import {
-  createChart,
+  CandlestickSeries,
   ColorType,
   CrosshairMode,
-  IChartApi,
-  ISeriesApi,
-  Time,
-  CandlestickSeries,
   HistogramSeries,
-  LineSeries,
-  MouseEventParams,
+  IChartApi,
+  ISeriesMarkersPluginApi,
+  ISeriesApi,
   SeriesMarker,
+  Time,
+  createSeriesMarkers,
+  createChart,
 } from "lightweight-charts";
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { formatPrice } from "@/utils/format";
 
 export interface CandleData {
-  time: number; // Unix timestamp
+  time: number;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+  is_gapfill?: boolean;
+}
+
+export interface ChartMarkerData {
+  time: number;
+  text: string;
+  tooltip: string;
+  color?: string;
+  position?: "aboveBar" | "belowBar" | "inBar";
+  shape?: "circle" | "square" | "arrowUp" | "arrowDown";
 }
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
 interface TradingChartProps {
   data: CandleData[];
+  liveTick?: CandleData;
+  markers?: ChartMarkerData[];
   initialTimeframe?: Timeframe;
   onTimeframeChange?: (tf: Timeframe) => void;
   colors?: {
@@ -41,7 +53,6 @@ interface TradingChartProps {
   };
 }
 
-// Legend Data Structure
 interface LegendData {
   open: string;
   high: string;
@@ -53,10 +64,153 @@ interface LegendData {
   color: string;
 }
 
+interface HoveredMarker {
+  time: string;
+  tooltip: string;
+}
+
+type LegendCandle = Pick<CandleData, "open" | "high" | "low" | "close">;
+type LegendVolume = { value?: number } | number | undefined;
+
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+function toChartTime(unixTime: number): Time {
+  const timeInSeconds =
+    unixTime > 1e11 ? Math.floor(unixTime / 1000) : unixTime;
+  return timeInSeconds as Time;
+}
+
+function markerTimeKey(time: Time | undefined): string | null {
+  if (time == null) return null;
+  if (typeof time === "number") return String(time);
+  if (typeof time === "string") return time;
+  if ("year" in time && "month" in time && "day" in time) {
+    return `${time.year}-${time.month}-${time.day}`;
+  }
+  return null;
+}
+
+function volumeColor(candle: Pick<CandleData, "open" | "close">): string {
+  return candle.close >= candle.open
+    ? "rgba(0, 207, 157, 0.5)"
+    : "rgba(255, 77, 77, 0.5)";
+}
+
+function candleColors(candle: CandleData): {
+  color: string;
+  borderColor: string;
+  wickColor: string;
+} {
+  if (candle.is_gapfill) {
+    return {
+      color: "rgba(148, 163, 184, 0.18)",
+      borderColor: "rgba(148, 163, 184, 0.45)",
+      wickColor: "rgba(148, 163, 184, 0.4)",
+    };
+  }
+
+  const isUp = candle.close >= candle.open;
+  return isUp
+    ? {
+        color: "#00cf9d",
+        borderColor: "#00cf9d",
+        wickColor: "#00cf9d",
+      }
+    : {
+        color: "#ff4d4d",
+        borderColor: "#ff4d4d",
+        wickColor: "#ff4d4d",
+      };
+}
+
+function formatLegendVolume(value?: number): string {
+  if (value == null) return "N/A";
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+  return value.toFixed(2);
+}
+
+function extractVolumeValue(volume: LegendVolume): number | undefined {
+  if (typeof volume === "number") return volume;
+  return volume?.value;
+}
+
+function toChartCandle(candle: CandleData) {
+  return {
+    ...candle,
+    time: toChartTime(candle.time),
+    ...candleColors(candle),
+  };
+}
+
+function toVolumePoint(candle: CandleData) {
+  return {
+    time: toChartTime(candle.time),
+    value: candle.volume,
+    color: volumeColor(candle),
+  };
+}
+
+function sameCandle(a?: CandleData, b?: CandleData): boolean {
+  if (!a || !b) return false;
+  return (
+    a.time === b.time &&
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close &&
+    a.volume === b.volume &&
+    Boolean(a.is_gapfill) === Boolean(b.is_gapfill)
+  );
+}
+
+function canSkipFullSync(
+  previous: CandleData[],
+  next: CandleData[],
+  liveTick?: CandleData,
+): boolean {
+  if (!liveTick || previous.length === 0 || next.length === 0) {
+    return false;
+  }
+
+  if (previous === next) {
+    return false;
+  }
+
+  const lastNext = next[next.length - 1];
+  if (!sameCandle(lastNext, liveTick)) {
+    return false;
+  }
+
+  if (next.length === previous.length) {
+    if (previous[previous.length - 1]?.time !== lastNext.time) {
+      return false;
+    }
+    for (let index = 0; index < next.length - 1; index += 1) {
+      if (!sameCandle(previous[index], next[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (next.length === previous.length + 1) {
+    for (let index = 0; index < previous.length; index += 1) {
+      if (!sameCandle(previous[index], next[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
 
 export const TradingChart = ({
   data,
+  liveTick,
+  markers = [],
   initialTimeframe = "1m",
   onTimeframeChange,
   colors = {
@@ -71,34 +225,108 @@ export const TradingChart = ({
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const markerMapRef = useRef<Map<string, ChartMarkerData>>(new Map());
+  const liveTickRef = useRef<CandleData | undefined>(liveTick);
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
   const [legend, setLegend] = useState<LegendData | null>(null);
-
-  // Indicator Visibility State
   const [showVolume, setShowVolume] = useState(true);
+  const [hoveredMarker, setHoveredMarker] = useState<HoveredMarker | null>(
+    null,
+  );
 
-  // Memoize sorted data
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => a.time - b.time);
   }, [data]);
+  const chartMarkers = useMemo(
+    () =>
+      markers.map((marker) => ({
+        time: toChartTime(marker.time),
+        position: marker.position ?? "aboveBar",
+        shape: marker.shape ?? "circle",
+        color: marker.color ?? "#3782d0",
+        text: marker.text,
+      })) satisfies SeriesMarker<Time>[],
+    [markers],
+  );
 
-  // Ref for data access in closures
+  const previousDataRef = useRef<CandleData[]>(sortedData);
   const dataRef = useRef<CandleData[]>(sortedData);
   useEffect(() => {
     dataRef.current = sortedData;
   }, [sortedData]);
+  useEffect(() => {
+    liveTickRef.current = liveTick;
+  }, [liveTick]);
+  useEffect(() => {
+    const nextMap = new Map<string, ChartMarkerData>();
+    for (const marker of markers) {
+      nextMap.set(markerTimeKey(toChartTime(marker.time)) ?? "", marker);
+    }
+    markerMapRef.current = nextMap;
+  }, [markers]);
 
-  // Handle Timeframe Click
-  const handleTimeframeClick = (tf: Timeframe) => {
-    setTimeframe(tf);
-    if (onTimeframeChange) onTimeframeChange(tf);
-  };
+  const updateLegend = useCallback(
+    (candle?: LegendCandle, volume?: LegendVolume) => {
+      if (!candle) {
+        setLegend(null);
+        return;
+      }
+
+      const { open, close, high, low } = candle;
+      const isUp = close >= open;
+      const color = isUp ? "text-[#00cf9d]" : "text-[#ff4d4d]";
+      const percent = open === 0 ? 0 : ((close - open) / open) * 100;
+      const sign = percent >= 0 ? "+" : "";
+
+      setLegend({
+        open: formatPrice(open),
+        high: formatPrice(high),
+        low: formatPrice(low),
+        close: formatPrice(close),
+        volume: formatLegendVolume(extractVolumeValue(volume)),
+        percentChange: `${sign}${percent.toFixed(2)}%`,
+        priceChange: `${sign}${formatPrice(close - open)}`,
+        color,
+      });
+    },
+    [],
+  );
+
+  const applyFullChartData = useCallback(
+    (candles: CandleData[]) => {
+      if (!candlestickSeriesRef.current) return;
+      candlestickSeriesRef.current.setData(candles.map(toChartCandle));
+
+      if (volumeSeriesRef.current) {
+        if (showVolume) {
+          volumeSeriesRef.current.setData(candles.map(toVolumePoint));
+          volumeSeriesRef.current.applyOptions({ visible: true });
+        } else {
+          volumeSeriesRef.current.applyOptions({ visible: false });
+        }
+      }
+
+      const latestCandle = candles[candles.length - 1];
+      queueMicrotask(() => {
+        updateLegend(latestCandle, latestCandle?.volume);
+      });
+    },
+    [showVolume, updateLegend],
+  );
+
+  const handleTimeframeClick = useCallback(
+    (tf: Timeframe) => {
+      setTimeframe(tf);
+      onTimeframeChange?.(tf);
+    },
+    [onTimeframeChange],
+  );
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // --- Chart Initialization ---
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.backgroundColor },
@@ -113,20 +341,19 @@ export const TradingChart = ({
       timeScale: {
         timeVisible: true,
         borderColor: "rgba(255, 255, 255, 0.1)",
+        rightOffset: 12,
+        shiftVisibleRangeOnNewBar: false,
       },
       rightPriceScale: {
         borderColor: "rgba(255, 255, 255, 0.1)",
       },
       crosshair: {
-        mode: CrosshairMode.Normal, // Crosshair follows mouse freely, not snapped to OHLC
+        mode: CrosshairMode.Normal,
       },
     });
 
     chartRef.current = chart;
 
-    // --- Series ---
-
-    // 1. Candlestick
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#00cf9d",
       downColor: "#ff4d4d",
@@ -140,140 +367,127 @@ export const TradingChart = ({
       },
     });
     candlestickSeriesRef.current = candlestickSeries;
+    markerPluginRef.current = createSeriesMarkers(candlestickSeries, []);
 
-    // 2. Volume (Histogram)
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
-      priceScaleId: "", // Overlay on main chart, but we need to position it
+      priceScaleId: "",
     });
-    // Configure volume to sit at bottom
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
-        top: 0.8, // 80% empty space at top
+        top: 0.8,
         bottom: 0,
       },
     });
     volumeSeriesRef.current = volumeSeries;
 
-    // --- Initial Data Population ---
-    updateChartData();
+    queueMicrotask(() => {
+      applyFullChartData(dataRef.current);
+    });
 
-    // --- Crosshair / Legend Logic ---
     chart.subscribeCrosshairMove((param) => {
       const currentData = dataRef.current;
 
-      if (!param.time || !currentData.length) {
-        // Revert to latest data
-        if (currentData.length > 0) {
-          const lastCandle = currentData[currentData.length - 1];
-          const lastVolume = { value: lastCandle.volume };
-          updateLegend(lastCandle, lastVolume);
-        } else {
-          setLegend(null);
-        }
+      if (!param.time || currentData.length === 0) {
+        const latestCandle = currentData[currentData.length - 1];
+        updateLegend(latestCandle, latestCandle?.volume);
+        setHoveredMarker(null);
         return;
       }
 
-      const candle = param.seriesData.get(candlestickSeries) as any;
-      const volume = param.seriesData.get(volumeSeries) as any;
+      const candle = param.seriesData.get(candlestickSeries) as
+        | LegendCandle
+        | undefined;
+      const volume = param.seriesData.get(volumeSeries) as LegendVolume;
 
-      if (candle) {
-        updateLegend(candle, volume);
+      updateLegend(candle, volume);
+
+      const markerKey = markerTimeKey(param.time);
+      if (!markerKey) {
+        setHoveredMarker(null);
+        return;
       }
+
+      const marker = markerMapRef.current.get(markerKey) ?? null;
+      setHoveredMarker(
+        marker
+          ? {
+              time: markerKey,
+              tooltip: marker.tooltip,
+            }
+          : null,
+      );
     });
 
-    // Resize handler
     const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
-        });
-      }
+      if (!chartContainerRef.current) return;
+      chart.applyOptions({
+        width: chartContainerRef.current.clientWidth,
+        height: chartContainerRef.current.clientHeight,
+      });
     };
+
     window.addEventListener("resize", handleResize);
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      chartRef.current = null;
+      candlestickSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      markerPluginRef.current = null;
       chart.remove();
     };
-  }, []);
-
-  // Use another effect to update data when 'data', 'showVolume' changes
-  // This separates initialization from updates
-  const updateChartData = () => {
-    if (!candlestickSeriesRef.current) return;
-
-    const chartPoints = sortedData.map((d) => ({
-      ...d,
-      time: (d.time / 1000) as Time,
-    }));
-
-    candlestickSeriesRef.current.setData(chartPoints);
-
-    // Volume
-    if (volumeSeriesRef.current) {
-      if (showVolume) {
-        const volumePoints = sortedData.map((d) => ({
-          time: (d.time / 1000) as Time,
-          value: d.volume,
-          color:
-            d.close >= d.open
-              ? "rgba(0, 207, 157, 0.5)"
-              : "rgba(255, 77, 77, 0.5)",
-        }));
-        volumeSeriesRef.current.setData(volumePoints);
-        volumeSeriesRef.current.applyOptions({ visible: true });
-      } else {
-        volumeSeriesRef.current.applyOptions({ visible: false });
-      }
-    }
-
-    // Also update legend if no crosshair event is active (approximate check by just updating latest)
-    // Actually, since we don't have easy access to chart state "isHovered",
-    // we can just update the legend to latest here. If user hovers, it will overwrite.
-    if (sortedData.length > 0) {
-      const last = sortedData[sortedData.length - 1];
-      updateLegend(last, last.volume);
-    }
-  };
-
-  // Helper to update legend
-  const updateLegend = (candle: any, volume: any) => {
-    if (!candle) {
-      setLegend(null);
-      return;
-    }
-    const open = candle.open;
-    const close = candle.close;
-    const high = candle.high;
-    const low = candle.low;
-
-    // Calculate color and percent
-    const isUp = close >= open;
-    const color = isUp ? "text-[#00cf9d]" : "text-[#ff4d4d]";
-    const percent = ((close - open) / open) * 100;
-    const sign = percent >= 0 ? "+" : "";
-
-    setLegend({
-      open: formatPrice(open),
-      high: formatPrice(high),
-      low: formatPrice(low),
-      close: formatPrice(close),
-      volume: volume?.value ? (volume.value / 1e9).toFixed(2) + "B" : "N/A",
-      percentChange: `${sign}${percent.toFixed(2)}%`,
-      priceChange: `${sign}${formatPrice(close - open)}`,
-      color,
-    });
-  };
+  }, [
+    applyFullChartData,
+    colors.backgroundColor,
+    colors.textColor,
+    updateLegend,
+  ]);
 
   useEffect(() => {
-    updateChartData();
-  }, [sortedData, showVolume]);
+    const previous = previousDataRef.current;
+    const next = sortedData;
+    const skipFullSync = canSkipFullSync(previous, next, liveTickRef.current);
+
+    if (!skipFullSync) {
+      queueMicrotask(() => {
+        applyFullChartData(next);
+      });
+    }
+
+    previousDataRef.current = next;
+  }, [applyFullChartData, sortedData]);
+
+  useEffect(() => {
+    if (!liveTick || !candlestickSeriesRef.current) return;
+
+    const tickPoint = {
+      ...liveTick,
+      time: toChartTime(liveTick.time),
+      ...candleColors(liveTick),
+    };
+
+    candlestickSeriesRef.current.update(tickPoint);
+
+    if (volumeSeriesRef.current && showVolume) {
+      volumeSeriesRef.current.update({
+        time: tickPoint.time,
+        value: liveTick.volume,
+        color: volumeColor(liveTick),
+      });
+    }
+
+    queueMicrotask(() => {
+      updateLegend(liveTick, liveTick.volume);
+    });
+  }, [liveTick, showVolume, updateLegend]);
+
+  useEffect(() => {
+    markerPluginRef.current?.setMarkers(chartMarkers);
+  }, [chartMarkers]);
 
   return (
     <div className="relative w-full h-full flex flex-col">
-      {/* Toolbar */}
       <div className="flex items-center justify-between p-3 border-b border-(--border-primary)">
         <div className="flex gap-1">
           {TIMEFRAMES.map((tf) => (
@@ -294,7 +508,7 @@ export const TradingChart = ({
 
         <div className="flex gap-2">
           <button
-            onClick={() => setShowVolume(!showVolume)}
+            onClick={() => setShowVolume((value) => !value)}
             className={clsx(
               "px-2 py-1 text-xs rounded border transition-colors",
               showVolume
@@ -307,7 +521,6 @@ export const TradingChart = ({
         </div>
       </div>
 
-      {/* Legend */}
       <div className="absolute top-[50px] left-4 z-10 pointer-events-none text-xs font-mono space-y-1">
         {legend ? (
           <>
@@ -324,10 +537,15 @@ export const TradingChart = ({
             )}
           </>
         ) : (
-          // Default to showing latest data if available, or just empty
           <span className="text-gray-500">...</span>
         )}
       </div>
+
+      {hoveredMarker && (
+        <div className="pointer-events-none absolute right-21 top-[54px] z-10 max-w-[320px] rounded-xl border border-(--border-primary) bg-(--bg-secondary)/95 px-3 py-2 text-[12px] text-(--text-primary) shadow-lg backdrop-blur">
+          {hoveredMarker.tooltip}
+        </div>
+      )}
 
       <div ref={chartContainerRef} className="w-full flex-1 min-h-0" />
     </div>
