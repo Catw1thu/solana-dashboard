@@ -10,26 +10,26 @@ use crate::service_event::model::ServiceEventEnvelope;
 const TRACKED_MINTS_KEY: &str = "tracked:mints";
 const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 const STAGE_BONDING_CURVE: &str = "bonding_curve";
-const STAGE_AMM: &str = "amm";
+const STAGE_POOL: &str = "pool";
 const MARKET_TYPE_PUMPFUN_CURVE: &str = "pumpfun_curve";
 const MARKET_TYPE_PUMPAMM_POOL: &str = "pumpamm_pool";
 
 const LOAD_TRACKED_TOKENS_SQL: &str = r#"
 select mint
-from tracked_tokens
+from tokens
 "#;
 
 const UPSERT_TRACKED_TOKEN_SQL: &str = r#"
-insert into tracked_tokens (
+insert into tokens (
     mint,
     creator,
     bonding_curve,
     token_program,
     create_event_id,
-    accepted_at,
+    first_seen_at,
     current_stage,
-    current_market_type,
-    current_market_id,
+    active_market_type,
+    active_market_id,
     migrated_at,
     updated_at
 ) values (
@@ -46,18 +46,24 @@ insert into tracked_tokens (
     now()
 )
 on conflict (mint) do update set
-    creator = excluded.creator,
-    bonding_curve = excluded.bonding_curve,
-    token_program = excluded.token_program,
+    creator = coalesce(excluded.creator, tokens.creator),
+    bonding_curve = coalesce(excluded.bonding_curve, tokens.bonding_curve),
+    token_program = coalesce(excluded.token_program, tokens.token_program),
+    create_event_id = coalesce(tokens.create_event_id, excluded.create_event_id),
+    first_seen_at = least(tokens.first_seen_at, excluded.first_seen_at),
+    current_stage = excluded.current_stage,
+    active_market_type = coalesce(excluded.active_market_type, tokens.active_market_type),
+    active_market_id = coalesce(excluded.active_market_id, tokens.active_market_id),
+    migrated_at = coalesce(excluded.migrated_at, tokens.migrated_at),
     updated_at = now()
 "#;
 
 const MARK_MIGRATED_SQL: &str = r#"
-update tracked_tokens
+update tokens
 set
     current_stage = $2,
-    current_market_type = $3,
-    current_market_id = $4,
+    active_market_type = $3,
+    active_market_id = $4,
     migrated_at = to_timestamp($5),
     updated_at = now()
 where mint = $1
@@ -170,7 +176,7 @@ impl TrackedMintTracker {
                 MARK_MIGRATED_SQL,
                 &[
                     &mint,
-                    &STAGE_AMM,
+                    &STAGE_POOL,
                     &MARKET_TYPE_PUMPAMM_POOL,
                     &pool,
                     &migrated_at,

@@ -41,16 +41,16 @@ async fn persist_transaction_samples(
 
     let view_started = Instant::now();
     if let Some(view) = build_transaction_view(tx) {
-        let view_elapsed = view_started.elapsed();
+        let _view_elapsed = view_started.elapsed();
         if capture_samples {
             write_transaction_view_sample(&view)?;
         }
 
         let collect_started = Instant::now();
         let service_events = collect_service_events(&view);
-        let collect_elapsed = collect_started.elapsed();
-        let collected_event_count = service_events.len();
-        let mut forwarded_event_count = 0usize;
+        let _collect_elapsed = collect_started.elapsed();
+        let _collected_event_count = service_events.len();
+        let mut _forwarded_event_count = 0usize;
         let mut first_forward_elapsed_ms = None;
         let mut tracker_elapsed = Duration::ZERO;
         let mut accept_create_elapsed = Duration::ZERO;
@@ -97,32 +97,32 @@ async fn persist_transaction_samples(
             }
 
             let emit_started = Instant::now();
-            let json = serde_json::to_string(&service_event)?;
-            println!("Service event: {json}");
+            // let json = serde_json::to_string(&service_event)?;
+            //println!("Service event: {json}");
             emitter.emit(&service_event).await?;
             emit_elapsed += emit_started.elapsed();
-            forwarded_event_count += 1;
+            _forwarded_event_count += 1;
         }
 
-        if collected_event_count > 0 {
-            println!(
-                "Parse timing: sig={} collected={} forwarded={} view_ms={:.3} collect_ms={:.3} tracker_ms={:.3} accept_create_ms={:.3} should_forward_ms={:.3} record_migration_ms={:.3} emit_ms={:.3} total_ms={:.3} first_forward_ms={}",
-                signature,
-                collected_event_count,
-                forwarded_event_count,
-                view_elapsed.as_secs_f64() * 1000.0,
-                collect_elapsed.as_secs_f64() * 1000.0,
-                tracker_elapsed.as_secs_f64() * 1000.0,
-                accept_create_elapsed.as_secs_f64() * 1000.0,
-                should_forward_elapsed.as_secs_f64() * 1000.0,
-                record_migration_elapsed.as_secs_f64() * 1000.0,
-                emit_elapsed.as_secs_f64() * 1000.0,
-                parse_started.elapsed().as_secs_f64() * 1000.0,
-                first_forward_elapsed_ms
-                    .map(|ms| format!("{ms:.3}"))
-                    .unwrap_or_else(|| "none".to_string())
-            );
-        }
+        // if collected_event_count > 0 {
+        //     println!(
+        //         "Parse timing: sig={} collected={} forwarded={} view_ms={:.3} collect_ms={:.3} tracker_ms={:.3} accept_create_ms={:.3} should_forward_ms={:.3} record_migration_ms={:.3} emit_ms={:.3} total_ms={:.3} first_forward_ms={}",
+        //         signature,
+        //         collected_event_count,
+        //         forwarded_event_count,
+        //         view_elapsed.as_secs_f64() * 1000.0,
+        //         collect_elapsed.as_secs_f64() * 1000.0,
+        //         tracker_elapsed.as_secs_f64() * 1000.0,
+        //         accept_create_elapsed.as_secs_f64() * 1000.0,
+        //         should_forward_elapsed.as_secs_f64() * 1000.0,
+        //         record_migration_elapsed.as_secs_f64() * 1000.0,
+        //         emit_elapsed.as_secs_f64() * 1000.0,
+        //         parse_started.elapsed().as_secs_f64() * 1000.0,
+        //         first_forward_elapsed_ms
+        //             .map(|ms| format!("{ms:.3}"))
+        //             .unwrap_or_else(|| "none".to_string())
+        //     );
+        // }
     }
 
     Ok(())
