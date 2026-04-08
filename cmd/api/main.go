@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"solana-dashboard-go/internal/broadcaster"
 	"solana-dashboard-go/internal/config"
 	"solana-dashboard-go/internal/db"
 	"solana-dashboard-go/internal/httpapi"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/jetstream"
+	"solana-dashboard-go/internal/metadatafetcher"
 	"solana-dashboard-go/internal/projector"
 	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
@@ -22,12 +24,12 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "*")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -59,11 +61,25 @@ func main() {
 		}
 	}()
 
+	statsBroadcaster := broadcaster.NewBroadcaster(cfg.NATSURL, hub, readModelStore)
+	go func() {
+		if err := statsBroadcaster.Run(ctx); err != nil {
+			log.Printf("failed to run stats broadcaster: %v", err)
+		}
+	}()
+
 	if cfg.NATSURL != "" {
 		consumer := jetstream.NewConsumer(cfg.NATSURL, service)
 		go func() {
 			if err := consumer.Run(ctx); err != nil {
 				log.Fatalf("failed to run jetstream consumer: %v", err)
+			}
+		}()
+
+		metadataConsumer := metadatafetcher.NewConsumer(cfg.NATSURL, database)
+		go func() {
+			if err := metadataConsumer.Run(ctx); err != nil {
+				log.Printf("failed to run metadata fetcher consumer: %v", err)
 			}
 		}()
 	}
@@ -72,9 +88,9 @@ func main() {
 	mux.HandleFunc("/healthz", handler.Healthz)
 	mux.HandleFunc("/internal/events", handler.IngestEvent)
 	mux.HandleFunc("GET /tokens", handler.ListTokens)
+	mux.HandleFunc("GET /search/tokens", handler.SearchTokens)
 	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
 	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
-	mux.HandleFunc("GET /tokens/{mint}/timeline", handler.ListTokenTimeline)
 	mux.HandleFunc("GET /tokens/{mint}/candles", handler.ListTokenCandles)
 	mux.HandleFunc("GET /tokens/{mint}/activity", handler.ListTokenActivity)
 	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)

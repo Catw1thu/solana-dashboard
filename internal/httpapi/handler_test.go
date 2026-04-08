@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"solana-dashboard-go/internal/broadcaster"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/query"
@@ -23,7 +24,7 @@ type mockEventQuery struct {
 	events   []events.Envelope
 	detail   query.TokenDetail
 	list     []query.TokenListItem
-	timeline []query.TokenActivity
+	search   []query.TokenSearchItem
 	trades   []query.TokenTrade
 	candles  []query.TokenCandle
 	activity []query.TokenActivity
@@ -44,24 +45,24 @@ func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint strin
 	return m.events[:limit], nil
 }
 
-func (m *mockEventQuery) ListTokens(ctx context.Context, limit int) ([]query.TokenListItem, error) {
+func (m *mockEventQuery) ListTokens(ctx context.Context, opts query.TokenListOptions) ([]query.TokenListItem, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	if len(m.list) <= limit {
+	if len(m.list) <= opts.Limit {
 		return m.list, nil
 	}
-	return m.list[:limit], nil
+	return m.list[:opts.Limit], nil
 }
 
-func (m *mockEventQuery) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]query.TokenActivity, error) {
+func (m *mockEventQuery) SearchTokens(ctx context.Context, rawQuery string, limit int) ([]query.TokenSearchItem, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	if len(m.timeline) <= limit {
-		return m.timeline, nil
+	if len(m.search) <= limit {
+		return m.search, nil
 	}
-	return m.timeline[:limit], nil
+	return m.search[:limit], nil
 }
 
 func (m *mockEventQuery) ListTradesByMint(ctx context.Context, mint string, limit int) ([]query.TokenTrade, error) {
@@ -94,11 +95,60 @@ func (m *mockEventQuery) ListActivityByMint(ctx context.Context, mint string, li
 	return m.activity[:limit], nil
 }
 
+func (m *mockEventQuery) ListActivityPageByMint(ctx context.Context, mint string, limit int, cursor *query.TokenActivityCursor) (*query.TokenActivityPage, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	start := 0
+	if cursor != nil {
+		for idx, item := range m.activity {
+			if item.EventUnixTS == cursor.EventUnixTS && item.Slot == cursor.Slot {
+				start = idx + 1
+				break
+			}
+		}
+	}
+
+	if start > len(m.activity) {
+		start = len(m.activity)
+	}
+
+	end := start + limit
+	if end > len(m.activity) {
+		end = len(m.activity)
+	}
+
+	var nextCursor *query.TokenActivityCursor
+	hasMore := end < len(m.activity)
+	if hasMore && end > start {
+		last := m.activity[end-1]
+		nextCursor = &query.TokenActivityCursor{
+			EventUnixTS: last.EventUnixTS,
+			Slot:        last.Slot,
+			InsertSeq:   int64(end),
+		}
+	}
+
+	return &query.TokenActivityPage{
+		Activity:   m.activity[start:end],
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+	}, nil
+}
+
 func (m *mockEventQuery) GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error) {
 	if m.err != nil {
 		return query.TokenDetail{}, m.err
 	}
 	return m.detail, nil
+}
+
+func (m *mockEventQuery) BuildRealtimeStatsPayload(ctx context.Context, mint string, nowTs int64) (*broadcaster.TokenStatsPayload, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return nil, nil
 }
 
 func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
@@ -158,6 +208,87 @@ func TestIngestEventAcceptsValidPumpfunTrade(t *testing.T) {
 	}
 }
 
+func TestListTokensReturnsWindowBuySellCounts(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{
+		list: []query.TokenListItem{
+			{
+				Mint:         "mint_1",
+				WindowTxns:   12,
+				WindowBuys:   7,
+				WindowSells:  5,
+				WindowVolume: 42.5,
+			},
+		},
+	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens", handler.ListTokens)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens?limit=1&view=hot&window=5m", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Tokens []query.TokenListItem `json:"tokens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(response.Tokens) != 1 {
+		t.Fatalf("expected 1 token, got %d", len(response.Tokens))
+	}
+	if response.Tokens[0].WindowBuys != 7 || response.Tokens[0].WindowSells != 5 {
+		t.Fatalf("expected buy/sell counts to round-trip, got %+v", response.Tokens[0])
+	}
+}
+
+func TestSearchTokensReturnsMatches(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	handler := NewHandler(service, &mockEventQuery{
+		search: []query.TokenSearchItem{
+			{
+				Mint:     "mint_1",
+				Name:     stringPtrHandler("Moon Cat"),
+				Symbol:   stringPtrHandler("MOON"),
+				ImageURI: stringPtrHandler("https://example.com/moon.png"),
+			},
+		},
+	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /search/tokens", handler.SearchTokens)
+
+	req := httptest.NewRequest(http.MethodGet, "/search/tokens?q=moon&limit=5", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var response struct {
+		Count  int                     `json:"count"`
+		Tokens []query.TokenSearchItem `json:"tokens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal search response: %v", err)
+	}
+	if response.Count != 1 || len(response.Tokens) != 1 {
+		t.Fatalf("expected one search result, got %#v", response)
+	}
+}
+
 func TestListTokenTradesReturnsRecentTrades(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: true}
@@ -197,22 +328,23 @@ func TestListTokenTradesReturnsRecentTrades(t *testing.T) {
 	}
 }
 
-func TestListTokenTimelineReturnsActivityRows(t *testing.T) {
+func TestListTokenActivityReturnsCursorPage(t *testing.T) {
 	hub := realtime.NewHub()
 	store := &mockStore{inserted: true}
 	service := ingest.NewService(hub, store)
 	defer service.Close()
 
 	handler := NewHandler(service, &mockEventQuery{
-		timeline: []query.TokenActivity{
-			{EventID: "activity_2", Mint: "mint_1", ActivityType: "migrate"},
-			{EventID: "activity_1", Mint: "mint_1", ActivityType: "trade"},
+		activity: []query.TokenActivity{
+			{EventID: "event_3", Mint: "mint_1", EventUnixTS: 300, Slot: 3},
+			{EventID: "event_2", Mint: "mint_1", EventUnixTS: 200, Slot: 2},
+			{EventID: "event_1", Mint: "mint_1", EventUnixTS: 100, Slot: 1},
 		},
 	})
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /tokens/{mint}/timeline", handler.ListTokenTimeline)
+	mux.HandleFunc("GET /tokens/{mint}/activity", handler.ListTokenActivity)
 
-	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/timeline?limit=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/activity?limit=2", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -221,14 +353,38 @@ func TestListTokenTimelineReturnsActivityRows(t *testing.T) {
 	}
 
 	var response struct {
-		Mint     string                `json:"mint"`
-		Count    int                   `json:"count"`
-		Timeline []query.TokenActivity `json:"timeline"`
+		Count      int                        `json:"count"`
+		HasMore    bool                       `json:"has_more"`
+		NextCursor *query.TokenActivityCursor `json:"next_cursor"`
+		Activity   []query.TokenActivity      `json:"activity"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if response.Count != 2 {
-		t.Fatalf("expected count=2, got %d", response.Count)
+	if response.Count != 2 || !response.HasMore || response.NextCursor == nil {
+		t.Fatalf("expected cursor page metadata, got %#v", response)
 	}
+
+	req = httptest.NewRequest(
+		http.MethodGet,
+		"/tokens/mint_1/activity?limit=2&before_time=200&before_slot=2&before_seq=2",
+		nil,
+	)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d on second page, got %d", http.StatusOK, rec.Code)
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to unmarshal second page response: %v", err)
+	}
+	if response.Count != 1 || response.HasMore {
+		t.Fatalf("expected final page with one item, got %#v", response)
+	}
+}
+
+func stringPtrHandler(value string) *string {
+	return &value
 }

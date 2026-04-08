@@ -11,9 +11,10 @@ import (
 )
 
 type mockTokenEventReader struct {
-	events      []events.Envelope
-	createEvent *events.Envelope
-	err         error
+	events       []events.Envelope
+	createEvent  *events.Envelope
+	migrateEvent *events.Envelope
+	err          error
 }
 
 func (m *mockTokenEventReader) ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error) {
@@ -33,15 +34,45 @@ func (m *mockTokenEventReader) FindLatestCreateEventByMint(ctx context.Context, 
 	return m.createEvent, nil
 }
 
+func (m *mockTokenEventReader) FindLatestMigrateEventByMint(ctx context.Context, mint string) (*events.Envelope, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.migrateEvent, nil
+}
+
 type mockTokenReadModel struct {
-	snapshots  []store.TokenSnapshotRecord
-	snapshot   *store.TokenSnapshotRecord
-	markets    []store.TokenMarketRecord
-	trades     []store.TradeEventRecord
-	activities []store.ActivityEventRecord
-	summary    *store.TradeSummaryRecord
-	candles    []store.TokenCandleRecord
-	err        error
+	boardRows    []store.TokenBoardRecord
+	searchRows   []store.TokenSearchRecord
+	snapshots    []store.TokenSnapshotRecord
+	snapshot     *store.TokenSnapshotRecord
+	markets      []store.TokenMarketRecord
+	trades       []store.TradeEventRecord
+	tradeMetrics []store.TradeMetricPoint
+	activities   []store.ActivityEventRecord
+	summary      *store.TradeSummaryRecord
+	candles      []store.TokenCandleRecord
+	err          error
+}
+
+func (m *mockTokenReadModel) ListTokenBoardRows(ctx context.Context, query store.TokenBoardQuery) ([]store.TokenBoardRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.boardRows) <= query.Limit {
+		return m.boardRows, nil
+	}
+	return m.boardRows[:query.Limit], nil
+}
+
+func (m *mockTokenReadModel) SearchTokenSnapshots(ctx context.Context, query string, limit int) ([]store.TokenSearchRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.searchRows) <= limit {
+		return m.searchRows, nil
+	}
+	return m.searchRows[:limit], nil
 }
 
 func (m *mockTokenReadModel) ListTokenSnapshots(ctx context.Context, limit int) ([]store.TokenSnapshotRecord, error) {
@@ -100,11 +131,59 @@ func (m *mockTokenReadModel) ListActivityEventsByMint(ctx context.Context, mint 
 	return m.activities[:limit], nil
 }
 
+func (m *mockTokenReadModel) ListActivityEventsPageByMint(ctx context.Context, mint string, limit int, cursor *store.ActivityEventCursor) (*store.ActivityEventPage, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	start := 0
+	if cursor != nil {
+		for idx, item := range m.activities {
+			if item.EventUnixTS == cursor.EventUnixTS && item.Slot == cursor.Slot && item.InsertSeq == cursor.InsertSeq {
+				start = idx + 1
+				break
+			}
+		}
+	}
+	if start > len(m.activities) {
+		start = len(m.activities)
+	}
+
+	end := start + limit
+	if end > len(m.activities) {
+		end = len(m.activities)
+	}
+
+	var nextCursor *store.ActivityEventCursor
+	hasMore := end < len(m.activities)
+	if hasMore && end > start {
+		last := m.activities[end-1]
+		nextCursor = &store.ActivityEventCursor{
+			EventUnixTS: last.EventUnixTS,
+			Slot:        last.Slot,
+			InsertSeq:   last.InsertSeq,
+		}
+	}
+
+	return &store.ActivityEventPage{
+		Items:      m.activities[start:end],
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+	}, nil
+}
+
 func (m *mockTokenReadModel) LoadTradeSummaryByMint(ctx context.Context, mint string) (*store.TradeSummaryRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.summary, nil
+}
+
+func (m *mockTokenReadModel) ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]store.TradeMetricPoint, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.tradeMetrics, nil
 }
 
 func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]store.TokenCandleRecord, error) {
@@ -120,31 +199,30 @@ func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string,
 func TestListTokensBuildsNewTokenList(t *testing.T) {
 	mint := "mint_1"
 	service := NewTokenService(nil, &mockTokenReadModel{
-		snapshots: []store.TokenSnapshotRecord{
+		boardRows: []store.TokenBoardRecord{
 			{
-				Mint:         mint,
-				Name:         stringPtr("Token One"),
-				Symbol:       stringPtr("ONE"),
-				FirstSeenAt:  1770000001,
-				CurrentStage: "pool",
+				Mint:              mint,
+				Name:              stringPtr("Token One"),
+				Symbol:            stringPtr("ONE"),
+				FirstSeenAt:       1770000001,
+				ActiveSince:       1770000010,
+				CurrentStage:      "pool",
+				LatestPrice:       floatPtr(0.02),
+				LatestEventUnixTS: int64Ptr(1770000200),
+				PriceChange:       floatPtr(12.5),
+				WindowVolume:      42,
+				WindowTxns:        12,
+				LiquidityQuote:    floatPtr(55),
+				MarketCapQuote:    floatPtr(88),
 			},
-		},
-		summary: &store.TradeSummaryRecord{
-			LatestPrice:     floatPtr(0.02),
-			LatestEventUnix: int64Ptr(1770000200),
-			Txns24h:         12,
-			Buys24h:         7,
-			Sells24h:        5,
-			Volume24h:       42,
-			BuyVolume24h:    25,
-			SellVolume24h:   17,
-			Makers24h:       8,
-			Buyers24h:       5,
-			Sellers24h:      4,
 		},
 	})
 
-	items, err := service.ListTokens(context.Background(), 10)
+	items, err := service.ListTokens(context.Background(), TokenListOptions{
+		Limit:  10,
+		View:   "hot",
+		Window: "24h",
+	})
 	if err != nil {
 		t.Fatalf("ListTokens returned error: %v", err)
 	}
@@ -157,8 +235,8 @@ func TestListTokensBuildsNewTokenList(t *testing.T) {
 	if items[0].LatestPrice == nil || *items[0].LatestPrice != 0.02 {
 		t.Fatalf("expected latest price 0.02, got %#v", items[0].LatestPrice)
 	}
-	if items[0].Stats24h == nil || items[0].Stats24h.Txns != 12 {
-		t.Fatalf("expected stats_24h, got %#v", items[0].Stats24h)
+	if items[0].WindowTxns != 12 || items[0].WindowVolume != 42 {
+		t.Fatalf("expected window metrics, got txns=%d volume=%f", items[0].WindowTxns, items[0].WindowVolume)
 	}
 }
 
@@ -215,6 +293,100 @@ func TestGetTokenDetailBuildsCreateSummary(t *testing.T) {
 	}
 	if detail.CreateEvent == nil || detail.CreateEvent.Symbol != "ONE" {
 		t.Fatalf("expected create summary with symbol ONE, got %#v", detail.CreateEvent)
+	}
+}
+
+func TestGetTokenDetailIncludesLatestMigrateEvent(t *testing.T) {
+	migrateEvent := events.Envelope{
+		EventID:     "migrate_event_1",
+		Protocol:    "pumpfun",
+		EventType:   "migrate",
+		EventUnixTS: 1770001200,
+		Payload: json.RawMessage(`{
+			"mint":"mint_1",
+			"sol_amount":"2500000000",
+			"mint_amount":"5000000000000"
+		}`),
+	}
+
+	service := NewTokenService(
+		&mockTokenEventReader{migrateEvent: &migrateEvent},
+		&mockTokenReadModel{
+			snapshot: &store.TokenSnapshotRecord{
+				Mint:         "mint_1",
+				FirstSeenAt:  1770000000,
+				CurrentStage: "pool",
+				MigratedAt:   int64Ptr(1770001200),
+			},
+		},
+	)
+
+	detail, err := service.GetTokenDetail(context.Background(), "mint_1")
+	if err != nil {
+		t.Fatalf("GetTokenDetail returned error: %v", err)
+	}
+	if detail.MigrateEvent == nil || detail.MigrateEvent.EventID != "migrate_event_1" {
+		t.Fatalf("expected migrate event to be present, got %#v", detail.MigrateEvent)
+	}
+}
+
+func TestBuildRealtimeStatsPayloadUsesDatabaseMetrics(t *testing.T) {
+	nowTs := int64(1_700_300_000)
+	service := NewTokenService(nil, &mockTokenReadModel{
+		snapshot: &store.TokenSnapshotRecord{
+			Mint:         "mint_1",
+			FirstSeenAt:  nowTs - 2400,
+			CurrentStage: "pool",
+		},
+		tradeMetrics: []store.TradeMetricPoint{
+			{
+				EventUnixTS: nowTs - 2400,
+				Side:        "buy",
+				Price:       0.0000003,
+				Volume:      0.1,
+			},
+			{
+				EventUnixTS: nowTs - 10,
+				Side:        "buy",
+				Price:       0.00001,
+				Volume:      0.2,
+			},
+		},
+	})
+
+	payload, err := service.BuildRealtimeStatsPayload(context.Background(), "mint_1", nowTs)
+	if err != nil {
+		t.Fatalf("BuildRealtimeStatsPayload returned error: %v", err)
+	}
+	if payload == nil {
+		t.Fatal("expected non-nil realtime stats payload")
+	}
+	if payload.P1h != 0.0000003 || payload.P4h != 0.0000003 || payload.P24h != 0.0000003 {
+		t.Fatalf("expected seeded anchors from DB metrics, got p1h=%f p4h=%f p24h=%f", payload.P1h, payload.P4h, payload.P24h)
+	}
+}
+
+func TestSearchTokensReturnsGlobalMatches(t *testing.T) {
+	service := NewTokenService(nil, &mockTokenReadModel{
+		searchRows: []store.TokenSearchRecord{
+			{
+				Mint:        "mint_1",
+				Name:        stringPtr("Moon Cat"),
+				Symbol:      stringPtr("MOON"),
+				LatestPrice: floatPtr(0.12),
+			},
+		},
+	})
+
+	items, err := service.SearchTokens(context.Background(), "moon", 5)
+	if err != nil {
+		t.Fatalf("SearchTokens returned error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Mint != "mint_1" {
+		t.Fatalf("expected mint_1, got %s", items[0].Mint)
 	}
 }
 

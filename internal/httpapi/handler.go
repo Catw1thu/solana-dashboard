@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"solana-dashboard-go/internal/broadcaster"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/query"
@@ -23,13 +24,15 @@ const (
 )
 
 type eventQuery interface {
-	ListTokens(ctx context.Context, limit int) ([]query.TokenListItem, error)
+	ListTokens(ctx context.Context, opts query.TokenListOptions) ([]query.TokenListItem, error)
+	SearchTokens(ctx context.Context, rawQuery string, limit int) ([]query.TokenSearchItem, error)
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
-	ListTimelineByMint(ctx context.Context, mint string, limit int) ([]query.TokenActivity, error)
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]query.TokenTrade, error)
 	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]query.TokenCandle, error)
 	ListActivityByMint(ctx context.Context, mint string, limit int) ([]query.TokenActivity, error)
+	ListActivityPageByMint(ctx context.Context, mint string, limit int, cursor *query.TokenActivityCursor) (*query.TokenActivityPage, error)
 	GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error)
+	BuildRealtimeStatsPayload(ctx context.Context, mint string, nowTs int64) (*broadcaster.TokenStatsPayload, error)
 }
 
 type Handler struct {
@@ -152,8 +155,19 @@ func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.eventQuery.ListTokens(r.Context(), limit)
+	view := r.URL.Query().Get("view")
+	window := r.URL.Query().Get("window")
+
+	items, err := h.eventQuery.ListTokens(r.Context(), query.TokenListOptions{
+		Limit:  limit,
+		View:   view,
+		Window: window,
+	})
 	if err != nil {
+		if errors.Is(err, query.ErrInvalidTokenListWindow) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		log.Printf("failed to list tokens: %v", err)
 		http.Error(w, "failed to list tokens", http.StatusInternalServerError)
 		return
@@ -161,15 +175,60 @@ func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
 
 	response := struct {
 		Count  int                   `json:"count"`
+		View   string                `json:"view,omitempty"`
+		Window string                `json:"window,omitempty"`
 		Tokens []query.TokenListItem `json:"tokens"`
 	}{
 		Count:  len(items),
+		View:   view,
+		Window: window,
 		Tokens: items,
 	}
 
 	setJSONHeaders(w)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("failed to encode token list response: %v", err)
+	}
+}
+
+func (h *Handler) SearchTokens(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.eventQuery == nil {
+		http.Error(w, "token query not configured", http.StatusInternalServerError)
+		return
+	}
+
+	limit, err := parseListLimit(r, 8, 20)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	searchQuery := r.URL.Query().Get("q")
+	items, err := h.eventQuery.SearchTokens(r.Context(), searchQuery, limit)
+	if err != nil {
+		log.Printf("failed to search tokens: %v", err)
+		http.Error(w, "failed to search tokens", http.StatusInternalServerError)
+		return
+	}
+
+	response := struct {
+		Query  string                  `json:"query"`
+		Count  int                     `json:"count"`
+		Tokens []query.TokenSearchItem `json:"tokens"`
+	}{
+		Query:  searchQuery,
+		Count:  len(items),
+		Tokens: items,
+	}
+
+	setJSONHeaders(w)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("failed to encode token search response: %v", err)
 	}
 }
 
@@ -253,52 +312,6 @@ func (h *Handler) ListTokenTrades(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) ListTokenTimeline(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if h.eventQuery == nil {
-		http.Error(w, "token query not configured", http.StatusInternalServerError)
-		return
-	}
-
-	mint := r.PathValue("mint")
-	if mint == "" {
-		http.Error(w, "missing mint", http.StatusBadRequest)
-		return
-	}
-
-	limit, err := parseListLimit(r, defaultEventListLimit, maxEventListLimit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	items, err := h.eventQuery.ListTimelineByMint(r.Context(), mint, limit)
-	if err != nil {
-		log.Printf("failed to list timeline for mint=%s: %v", mint, err)
-		http.Error(w, "failed to list timeline", http.StatusInternalServerError)
-		return
-	}
-
-	response := struct {
-		Mint     string                `json:"mint"`
-		Count    int                   `json:"count"`
-		Timeline []query.TokenActivity `json:"timeline"`
-	}{
-		Mint:     mint,
-		Count:    len(items),
-		Timeline: items,
-	}
-
-	setJSONHeaders(w)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("failed to encode token timeline response for mint=%s: %v", mint, err)
-	}
-}
-
 func (h *Handler) ListTokenCandles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -379,7 +392,13 @@ func (h *Handler) ListTokenActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := h.eventQuery.ListActivityByMint(r.Context(), mint, limit)
+	cursor, err := parseActivityCursor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	page, err := h.eventQuery.ListActivityPageByMint(r.Context(), mint, limit, cursor)
 	if err != nil {
 		log.Printf("failed to list activity for mint=%s: %v", mint, err)
 		http.Error(w, "failed to list activity", http.StatusInternalServerError)
@@ -387,19 +406,55 @@ func (h *Handler) ListTokenActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := struct {
-		Mint     string                `json:"mint"`
-		Count    int                   `json:"count"`
-		Activity []query.TokenActivity `json:"activity"`
+		Mint       string                     `json:"mint"`
+		Count      int                        `json:"count"`
+		HasMore    bool                       `json:"has_more"`
+		NextCursor *query.TokenActivityCursor `json:"next_cursor,omitempty"`
+		Activity   []query.TokenActivity      `json:"activity"`
 	}{
-		Mint:     mint,
-		Count:    len(activity),
-		Activity: activity,
+		Mint:       mint,
+		Count:      len(page.Activity),
+		HasMore:    page.HasMore,
+		NextCursor: page.NextCursor,
+		Activity:   page.Activity,
 	}
 
 	setJSONHeaders(w)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("failed to encode token activity response for mint=%s: %v", mint, err)
 	}
+}
+
+func parseActivityCursor(r *http.Request) (*query.TokenActivityCursor, error) {
+	rawTime := r.URL.Query().Get("before_time")
+	rawSlot := r.URL.Query().Get("before_slot")
+	rawSeq := r.URL.Query().Get("before_seq")
+
+	if rawTime == "" && rawSlot == "" && rawSeq == "" {
+		return nil, nil
+	}
+	if rawTime == "" || rawSlot == "" || rawSeq == "" {
+		return nil, fmt.Errorf("invalid activity cursor")
+	}
+
+	eventUnixTS, err := strconv.ParseInt(rawTime, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid activity cursor")
+	}
+	slot, err := strconv.ParseUint(rawSlot, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid activity cursor")
+	}
+	insertSeq, err := strconv.ParseInt(rawSeq, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid activity cursor")
+	}
+
+	return &query.TokenActivityCursor{
+		EventUnixTS: eventUnixTS,
+		Slot:        slot,
+		InsertSeq:   insertSeq,
+	}, nil
 }
 
 func parseListLimit(r *http.Request, defaultLimit int, maxLimit int) (int, error) {

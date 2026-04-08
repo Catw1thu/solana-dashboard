@@ -3,10 +3,11 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"log"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/realtime"
 )
+
+const wrappedSolMint = "So11111111111111111111111111111111111111112"
 
 type eventStore interface {
 	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error)
@@ -36,21 +37,15 @@ func (s *Service) HandleEvent(ctx context.Context, event events.Envelope) error 
 func (s *Service) HandleDecodedEvent(ctx context.Context, decoded events.DecodedEnvelope) error {
 	payload := decoded.Payload
 
-	switch p := payload.(type) {
+	switch payload.(type) {
 	case events.PumpfunTradePayload:
-		log.Printf("[ingest] pumpfun trade mint=%s user=%s side=%s", p.Mint, p.User, p.Side)
 	case events.PumpfunCreatePayload:
-		log.Printf("[ingest] pumpfun create mint=%s creator=%s symbol=%s", p.Mint, p.Creator, p.Symbol)
 	case events.PumpfunMigratePayload:
-		log.Printf("[ingest] pumpfun migrate mint=%s pool=%s", p.Mint, p.Pool)
 	case events.PumpAmmSwapPayload:
-		log.Printf("[ingest] pumpamm swap pool=%s user=%s side=%s", p.Pool, p.User, p.Side)
 	case events.PumpAmmCreatePoolPayload:
-		log.Printf("[ingest] pumpamm create_pool pool=%s creator=%s", p.Pool, p.Creator)
 	case events.PumpAmmLiquidityPayload:
-		log.Printf("[ingest] pumpamm liquidity action=%s pool=%s user=%s", p.Action, p.Pool, p.User)
 	default:
-		return fmt.Errorf("unsupported payload type=%T", p)
+		return fmt.Errorf("unsupported payload type=%T", payload)
 	}
 
 	event, err := decoded.EnvelopeWithPayload()
@@ -63,13 +58,53 @@ func (s *Service) HandleDecodedEvent(ctx context.Context, decoded events.Decoded
 		return fmt.Errorf("insert service event: %w", err)
 	}
 	if inserted {
-		s.hub.Publish(event)
+		// Publish to a specific token topic if we can determine the mint
+		if mint := extractMint(event.Refs, payload); mint != "" {
+			s.hub.Publish("token:"+mint, event)
+		}
+		// Always publish to global for broad listeners
+		s.hub.Publish("global", event)
 	}
 	return nil
 }
 
-func (s *Service) Subscribe(buffer int) chan events.Envelope {
-	return s.hub.Subscribe(buffer)
+func extractMint(refs events.EventRefs, payload interface{}) string {
+	if refs.Mint != nil && *refs.Mint != "" {
+		return *refs.Mint
+	}
+
+	switch p := payload.(type) {
+	case events.PumpfunTradePayload:
+		return p.Mint
+	case events.PumpfunCreatePayload:
+		return p.Mint
+	case events.PumpfunMigratePayload:
+		return p.Mint
+	case events.PumpAmmSwapPayload:
+		return resolveNonSolMint(p.BaseMint, p.QuoteMint)
+	case events.PumpAmmCreatePoolPayload:
+		return resolveNonSolMint(p.BaseMint, p.QuoteMint)
+	case events.PumpAmmLiquidityPayload:
+		return resolveNonSolMint(p.BaseMint, p.QuoteMint)
+	}
+	return ""
+}
+
+func resolveNonSolMint(baseMint string, quoteMint string) string {
+	switch {
+	case baseMint == wrappedSolMint && quoteMint != "":
+		return quoteMint
+	case quoteMint == wrappedSolMint && baseMint != "":
+		return baseMint
+	case baseMint != "":
+		return baseMint
+	default:
+		return quoteMint
+	}
+}
+
+func (s *Service) Subscribe(topic string, buffer int) chan events.Envelope {
+	return s.hub.Subscribe(topic, buffer)
 }
 
 func (s *Service) Unsubscribe(ch chan events.Envelope) {

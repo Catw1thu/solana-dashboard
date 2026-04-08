@@ -8,7 +8,7 @@ import (
 
 func TestHubPublishDeliversEventToSubscriber(t *testing.T) {
 	hub := NewHub()
-	ch := hub.Subscribe(1)
+	ch := hub.Subscribe("global", 1)
 	defer hub.Unsubscribe(ch)
 
 	event := events.Envelope{
@@ -17,7 +17,7 @@ func TestHubPublishDeliversEventToSubscriber(t *testing.T) {
 		EventType: "trade",
 	}
 
-	hub.Publish(event)
+	hub.Publish("global", event)
 
 	select {
 	case got := <-ch:

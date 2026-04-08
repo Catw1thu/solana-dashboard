@@ -7,12 +7,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
 )
 
@@ -37,6 +39,13 @@ func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	if err := wsjson.Write(ctx, conn, WSMessage{
+		Action: "subscribe",
+		Topic:  "token:mint_1",
+	}); err != nil {
+		t.Fatalf("failed to subscribe websocket: %v", err)
+	}
 
 	event := events.Envelope{
 		SchemaVersion: 1,
@@ -95,6 +104,8 @@ func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 		}`),
 	}
 
+	time.Sleep(10 * time.Millisecond)
+
 	if err := service.HandleEvent(ctx, event); err != nil {
 		t.Fatalf("HandleEvent returned error: %v", err)
 	}
@@ -110,6 +121,75 @@ func TestServeWSPublishesRealtimeEvent(t *testing.T) {
 
 	if got.Protocol != "pumpfun" {
 		t.Fatalf("expected protocol=pumpfun, got %s", got.Protocol)
+	}
+}
+
+func TestServeWSSendsTokenStatSnapshotOnSubscribe(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	price := 1.25
+	latestEventUnix := int64(1770000300)
+	change24h := 25.0
+	handler := NewHandler(service, &mockEventQuery{
+		detail: query.TokenDetail{
+			Mint: "mint_1",
+			MarketMetrics: &query.TokenMarketMetrics{
+				LatestPrice:     &price,
+				LatestEventUnix: &latestEventUnix,
+			},
+			PriceChanges: &query.TokenPriceChanges{
+				H24: &change24h,
+			},
+			Stats24h: &query.TokenTradeStats{
+				Buys:       8,
+				Sells:      3,
+				Volume:     42,
+				BuyVolume:  30,
+				SellVolume: 12,
+			},
+		},
+	})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", handler.ServeWS)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	ctx := context.Background()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	if err := wsjson.Write(ctx, conn, WSMessage{
+		Action: "subscribe",
+		Topic:  "token:mint_1",
+	}); err != nil {
+		t.Fatalf("failed to subscribe websocket: %v", err)
+	}
+
+	var got events.Envelope
+	if err := wsjson.Read(ctx, conn, &got); err != nil {
+		t.Fatalf("failed to read websocket snapshot: %v", err)
+	}
+
+	if got.EventType != "token_stat" {
+		t.Fatalf("expected token_stat snapshot, got %s", got.EventType)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(got.Payload, &payload); err != nil {
+		t.Fatalf("failed to unmarshal token_stat payload: %v", err)
+	}
+	if payload["mint"] != "mint_1" {
+		t.Fatalf("expected mint_1 payload, got %#v", payload["mint"])
 	}
 }
 

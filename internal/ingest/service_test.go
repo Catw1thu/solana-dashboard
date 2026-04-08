@@ -23,13 +23,18 @@ func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	store := &mockStore{inserted: true}
 	service := NewService(hub, store)
 	defer service.Close()
-	ch := hub.Subscribe(1)
-	defer hub.Unsubscribe(ch)
+	globalCh := hub.Subscribe("global", 1)
+	defer hub.Unsubscribe(globalCh)
+	tokenCh := hub.Subscribe("token:base_1", 1)
+	defer hub.Unsubscribe(tokenCh)
 
 	event := events.Envelope{
 		EventID:   "solana:pumpamm:swap:testsig:outer:1",
 		Protocol:  "pumpamm",
 		EventType: "swap",
+		Refs: events.EventRefs{
+			Mint: stringPtr("base_1"),
+		},
 		Payload: json.RawMessage(`{
 			"side":"sell",
 			"ix_name":"sell",
@@ -64,11 +69,24 @@ func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	}
 
 	select {
-	case got := <-ch:
+	case got := <-globalCh:
 		if got.EventID != event.EventID {
 			t.Fatalf("expected event_id=%s, got %s", event.EventID, got.EventID)
 		}
 	default:
-		t.Fatal("expected handled event to be published to hub")
+		t.Fatal("expected handled event to be published to global topic")
 	}
+
+	select {
+	case got := <-tokenCh:
+		if got.EventID != event.EventID {
+			t.Fatalf("expected event_id=%s, got %s", event.EventID, got.EventID)
+		}
+	default:
+		t.Fatal("expected handled event to be published to token topic")
+	}
+}
+
+func stringPtr(v string) *string {
+	return &v
 }

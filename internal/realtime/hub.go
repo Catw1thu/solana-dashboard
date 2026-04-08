@@ -7,43 +7,62 @@ import (
 
 type Hub struct {
 	mu          sync.RWMutex
-	subscribers map[chan events.Envelope]struct{}
+	subscribers map[string]map[chan events.Envelope]struct{}
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		subscribers: make(map[chan events.Envelope]struct{}),
+		subscribers: make(map[string]map[chan events.Envelope]struct{}),
 	}
 }
 
-func (h *Hub) Subscribe(buffer int) chan events.Envelope {
+func (h *Hub) Subscribe(topic string, buffer int) chan events.Envelope {
 	ch := make(chan events.Envelope, buffer)
 
 	h.mu.Lock()
-	h.subscribers[ch] = struct{}{}
+	if _, ok := h.subscribers[topic]; !ok {
+		h.subscribers[topic] = make(map[chan events.Envelope]struct{})
+	}
+	h.subscribers[topic][ch] = struct{}{}
 	h.mu.Unlock()
 
 	return ch
 }
 
+// Unsubscribe removes a channel from all topics it was subscribed to.
 func (h *Hub) Unsubscribe(ch chan events.Envelope) {
 	h.mu.Lock()
-	if _, ok := h.subscribers[ch]; ok {
-		delete(h.subscribers, ch)
-		close(ch)
+	closed := false
+	for topic, subs := range h.subscribers {
+		if _, ok := subs[ch]; ok {
+			delete(subs, ch)
+			if len(subs) == 0 {
+				delete(h.subscribers, topic)
+			}
+			if !closed {
+				close(ch)
+				closed = true
+			}
+		}
 	}
 	h.mu.Unlock()
 }
 
-func (h *Hub) Publish(event events.Envelope) {
+// Publish sends an event to all subscribers of the specified topic
+func (h *Hub) Publish(topic string, event events.Envelope) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	for ch := range h.subscribers {
+	subs, ok := h.subscribers[topic]
+	if !ok {
+		return
+	}
+
+	for ch := range subs {
 		select {
 		case ch <- event:
 		default:
-
+			// Buffer full, drop event
 		}
 	}
 }

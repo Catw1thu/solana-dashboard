@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strings"
 
+	"solana-dashboard-go/internal/broadcaster"
 	"solana-dashboard-go/internal/events"
 	"solana-dashboard-go/internal/store"
 )
@@ -19,25 +20,34 @@ const (
 	defaultActivityLimit     = 100
 	defaultCandleLimit       = 200
 	defaultTokenListLimit    = 100
+	defaultTokenListView     = "hot"
+	defaultTokenListWindow   = "24h"
+	defaultTokenSearchLimit  = 8
 )
 
 var (
 	ErrTokenNotFound           = errors.New("token not found")
 	ErrInvalidCandleResolution = errors.New("invalid candle resolution")
+	ErrInvalidTokenListWindow  = errors.New("invalid token list window")
 )
 
 type tokenEventReader interface {
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
 	FindLatestCreateEventByMint(ctx context.Context, mint string) (*events.Envelope, error)
+	FindLatestMigrateEventByMint(ctx context.Context, mint string) (*events.Envelope, error)
 }
 
 type tokenReadModel interface {
+	ListTokenBoardRows(ctx context.Context, query store.TokenBoardQuery) ([]store.TokenBoardRecord, error)
+	SearchTokenSnapshots(ctx context.Context, query string, limit int) ([]store.TokenSearchRecord, error)
 	ListTokenSnapshots(ctx context.Context, limit int) ([]store.TokenSnapshotRecord, error)
 	FindTokenSnapshotByMint(ctx context.Context, mint string) (*store.TokenSnapshotRecord, error)
 	ListTokenMarketsByMint(ctx context.Context, mint string, limit int) ([]store.TokenMarketRecord, error)
 	ListTradeEventsByMint(ctx context.Context, mint string, limit int) ([]store.TradeEventRecord, error)
 	ListActivityEventsByMint(ctx context.Context, mint string, limit int) ([]store.ActivityEventRecord, error)
+	ListActivityEventsPageByMint(ctx context.Context, mint string, limit int, cursor *store.ActivityEventCursor) (*store.ActivityEventPage, error)
 	LoadTradeSummaryByMint(ctx context.Context, mint string) (*store.TradeSummaryRecord, error)
+	ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]store.TradeMetricPoint, error)
 	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]store.TokenCandleRecord, error)
 }
 
@@ -71,6 +81,7 @@ type TokenMarketMetrics struct {
 type TokenPriceChanges struct {
 	M5  *float64 `json:"m5,omitempty"`
 	H1  *float64 `json:"h1,omitempty"`
+	H4  *float64 `json:"h4,omitempty"`
 	H6  *float64 `json:"h6,omitempty"`
 	H24 *float64 `json:"h24,omitempty"`
 }
@@ -128,11 +139,24 @@ type TokenActivity struct {
 	Details      json.RawMessage `json:"details"`
 }
 
+type TokenActivityCursor struct {
+	EventUnixTS int64  `json:"event_unix_ts"`
+	Slot        uint64 `json:"slot"`
+	InsertSeq   int64  `json:"insert_seq"`
+}
+
+type TokenActivityPage struct {
+	Activity   []TokenActivity      `json:"activity"`
+	HasMore    bool                 `json:"has_more"`
+	NextCursor *TokenActivityCursor `json:"next_cursor,omitempty"`
+}
+
 type TokenListItem struct {
 	Mint              string           `json:"mint"`
 	Name              *string          `json:"name,omitempty"`
 	Symbol            *string          `json:"symbol,omitempty"`
 	URI               *string          `json:"uri,omitempty"`
+	ImageURI          *string          `json:"image_uri,omitempty"`
 	Creator           *string          `json:"creator,omitempty"`
 	BondingCurve      *string          `json:"bonding_curve,omitempty"`
 	TokenProgram      *string          `json:"token_program,omitempty"`
@@ -140,13 +164,35 @@ type TokenListItem struct {
 	QuoteMint         *string          `json:"quote_mint,omitempty"`
 	QuoteDecimals     *int32           `json:"quote_decimals,omitempty"`
 	AcceptedAt        int64            `json:"accepted_at"`
+	ActiveSince       int64            `json:"active_since"`
 	CurrentStage      string           `json:"current_stage"`
 	CurrentMarketType *string          `json:"current_market_type,omitempty"`
 	CurrentMarketID   *string          `json:"current_market_id,omitempty"`
 	MigratedAt        *int64           `json:"migrated_at,omitempty"`
 	LatestPrice       *float64         `json:"latest_price,omitempty"`
 	LatestEventUnixTS *int64           `json:"latest_event_unix_ts,omitempty"`
+	PriceChange       *float64         `json:"price_change,omitempty"`
+	WindowVolume      float64          `json:"window_volume"`
+	WindowTxns        int64            `json:"window_txns"`
+	WindowBuys        int64            `json:"window_buys"`
+	WindowSells       int64            `json:"window_sells"`
+	LiquidityQuote    *float64         `json:"liquidity_quote,omitempty"`
+	MarketCapQuote    *float64         `json:"market_cap_quote,omitempty"`
 	Stats24h          *TokenTradeStats `json:"stats_24h,omitempty"`
+}
+
+type TokenListOptions struct {
+	Limit  int
+	View   string
+	Window string
+}
+
+type TokenSearchItem struct {
+	Mint        string   `json:"mint"`
+	Name        *string  `json:"name,omitempty"`
+	Symbol      *string  `json:"symbol,omitempty"`
+	ImageURI    *string  `json:"image_uri,omitempty"`
+	LatestPrice *float64 `json:"latest_price,omitempty"`
 }
 
 type TokenDetail struct {
@@ -154,6 +200,7 @@ type TokenDetail struct {
 	Name           *string                   `json:"name,omitempty"`
 	Symbol         *string                   `json:"symbol,omitempty"`
 	URI            *string                   `json:"uri,omitempty"`
+	ImageURI       *string                   `json:"image_uri,omitempty"`
 	Creator        *string                   `json:"creator,omitempty"`
 	BondingCurve   *string                   `json:"bonding_curve,omitempty"`
 	TokenProgram   *string                   `json:"token_program,omitempty"`
@@ -165,6 +212,7 @@ type TokenDetail struct {
 	Markets        []store.TokenMarketRecord `json:"markets"`
 	RecentTrades   []TokenTrade              `json:"recent_trades"`
 	RecentEvents   []events.Envelope         `json:"recent_events"`
+	MigrateEvent   *events.Envelope          `json:"migrate_event,omitempty"`
 	Quote          *TokenQuote               `json:"quote,omitempty"`
 	MarketMetrics  *TokenMarketMetrics       `json:"market_metrics,omitempty"`
 	PriceChanges   *TokenPriceChanges        `json:"price_changes,omitempty"`
@@ -172,12 +220,13 @@ type TokenDetail struct {
 }
 
 type TokenCandle struct {
-	Time   int64   `json:"time"`
-	Open   float64 `json:"open"`
-	High   float64 `json:"high"`
-	Low    float64 `json:"low"`
-	Close  float64 `json:"close"`
-	Volume float64 `json:"volume"`
+	Time      int64   `json:"time"`
+	Open      float64 `json:"open"`
+	High      float64 `json:"high"`
+	Low       float64 `json:"low"`
+	Close     float64 `json:"close"`
+	Volume    float64 `json:"volume"`
+	IsGapFill bool    `json:"is_gapfill"`
 }
 
 type TokenService struct {
@@ -192,50 +241,93 @@ func NewTokenService(events tokenEventReader, model tokenReadModel) *TokenServic
 	}
 }
 
-func (s *TokenService) ListTokens(ctx context.Context, limit int) ([]TokenListItem, error) {
+func (s *TokenService) ListTokens(ctx context.Context, opts TokenListOptions) ([]TokenListItem, error) {
 	if s.model == nil {
 		return nil, fmt.Errorf("token read model not configured")
 	}
-	if limit <= 0 {
-		limit = defaultTokenListLimit
+	if opts.Limit <= 0 {
+		opts.Limit = defaultTokenListLimit
 	}
 
-	snapshots, err := s.model.ListTokenSnapshots(ctx, limit)
+	view := normalizeTokenListView(opts.View)
+	interval, err := normalizeStatsWindow(opts.Window)
 	if err != nil {
-		return nil, fmt.Errorf("list token snapshots: %w", err)
+		return nil, err
 	}
 
-	items := make([]TokenListItem, 0, len(snapshots))
-	for _, snapshot := range snapshots {
-		summary, err := s.model.LoadTradeSummaryByMint(ctx, snapshot.Mint)
-		if err != nil {
-			return nil, fmt.Errorf("load trade summary for mint=%s: %w", snapshot.Mint, err)
-		}
+	rows, err := s.model.ListTokenBoardRows(ctx, store.TokenBoardQuery{
+		Limit:    opts.Limit,
+		View:     view,
+		Interval: interval,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list token board rows: %w", err)
+	}
 
+	items := make([]TokenListItem, 0, len(rows))
+	for _, row := range rows {
 		item := TokenListItem{
-			Mint:              snapshot.Mint,
-			Name:              snapshot.Name,
-			Symbol:            snapshot.Symbol,
-			URI:               snapshot.URI,
-			Creator:           snapshot.Creator,
-			BondingCurve:      snapshot.BondingCurve,
-			TokenProgram:      snapshot.TokenProgram,
-			Decimals:          snapshot.Decimals,
-			QuoteMint:         snapshot.QuoteMint,
-			QuoteDecimals:     snapshot.QuoteDecimals,
-			AcceptedAt:        snapshot.FirstSeenAt,
-			CurrentStage:      snapshot.CurrentStage,
-			CurrentMarketType: snapshot.ActiveMarketType,
-			CurrentMarketID:   snapshot.ActiveMarketID,
-			MigratedAt:        snapshot.MigratedAt,
-		}
-		if summary != nil {
-			item.LatestPrice = summary.LatestPrice
-			item.LatestEventUnixTS = summary.LatestEventUnix
-			item.Stats24h = buildTradeStats(summary)
+			Mint:              row.Mint,
+			Name:              row.Name,
+			Symbol:            row.Symbol,
+			URI:               row.URI,
+			ImageURI:          row.ImageURI,
+			Creator:           row.Creator,
+			BondingCurve:      row.BondingCurve,
+			TokenProgram:      row.TokenProgram,
+			Decimals:          row.Decimals,
+			QuoteMint:         row.QuoteMint,
+			QuoteDecimals:     row.QuoteDecimals,
+			AcceptedAt:        row.FirstSeenAt,
+			ActiveSince:       row.ActiveSince,
+			CurrentStage:      row.CurrentStage,
+			CurrentMarketType: row.ActiveMarketType,
+			CurrentMarketID:   row.ActiveMarketID,
+			MigratedAt:        row.MigratedAt,
+			LatestPrice:       row.LatestPrice,
+			LatestEventUnixTS: row.LatestEventUnixTS,
+			PriceChange:       row.PriceChange,
+			WindowVolume:      row.WindowVolume,
+			WindowTxns:        row.WindowTxns,
+			WindowBuys:        row.WindowBuys,
+			WindowSells:       row.WindowSells,
+			LiquidityQuote:    row.LiquidityQuote,
+			MarketCapQuote:    row.MarketCapQuote,
 		}
 
 		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+func (s *TokenService) SearchTokens(ctx context.Context, rawQuery string, limit int) ([]TokenSearchItem, error) {
+	if s.model == nil {
+		return nil, fmt.Errorf("token read model not configured")
+	}
+
+	query := strings.TrimSpace(rawQuery)
+	if query == "" {
+		return []TokenSearchItem{}, nil
+	}
+	if limit <= 0 {
+		limit = defaultTokenSearchLimit
+	}
+
+	rows, err := s.model.SearchTokenSnapshots(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search token snapshots: %w", err)
+	}
+
+	items := make([]TokenSearchItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, TokenSearchItem{
+			Mint:        row.Mint,
+			Name:        row.Name,
+			Symbol:      row.Symbol,
+			ImageURI:    row.ImageURI,
+			LatestPrice: row.LatestPrice,
+		})
 	}
 
 	return items, nil
@@ -267,27 +359,53 @@ func (s *TokenService) ListTradesByMint(ctx context.Context, mint string, limit 
 	return items, nil
 }
 
-func (s *TokenService) ListTimelineByMint(ctx context.Context, mint string, limit int) ([]TokenActivity, error) {
-	return s.ListActivityByMint(ctx, mint, limit)
+func (s *TokenService) ListActivityByMint(ctx context.Context, mint string, limit int) ([]TokenActivity, error) {
+	page, err := s.ListActivityPageByMint(ctx, mint, limit, nil)
+	if err != nil {
+		return nil, err
+	}
+	return page.Activity, nil
 }
 
-func (s *TokenService) ListActivityByMint(ctx context.Context, mint string, limit int) ([]TokenActivity, error) {
+func (s *TokenService) ListActivityPageByMint(ctx context.Context, mint string, limit int, cursor *TokenActivityCursor) (*TokenActivityPage, error) {
 	snapshot, err := s.requireTokenSnapshot(ctx, mint)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := s.model.ListActivityEventsByMint(ctx, mint, clampLimit(limit, defaultActivityLimit))
+	var storeCursor *store.ActivityEventCursor
+	if cursor != nil {
+		storeCursor = &store.ActivityEventCursor{
+			EventUnixTS: cursor.EventUnixTS,
+			Slot:        cursor.Slot,
+			InsertSeq:   cursor.InsertSeq,
+		}
+	}
+
+	page, err := s.model.ListActivityEventsPageByMint(ctx, mint, clampLimit(limit, defaultActivityLimit), storeCursor)
 	if err != nil {
 		return nil, fmt.Errorf("list activity events: %w", err)
 	}
 
-	items := make([]TokenActivity, 0, len(rows))
-	for _, row := range rows {
+	items := make([]TokenActivity, 0, len(page.Items))
+	for _, row := range page.Items {
 		items = append(items, buildTokenActivity(snapshot, row))
 	}
 
-	return items, nil
+	var nextCursor *TokenActivityCursor
+	if page.NextCursor != nil {
+		nextCursor = &TokenActivityCursor{
+			EventUnixTS: page.NextCursor.EventUnixTS,
+			Slot:        page.NextCursor.Slot,
+			InsertSeq:   page.NextCursor.InsertSeq,
+		}
+	}
+
+	return &TokenActivityPage{
+		Activity:   items,
+		HasMore:    page.HasMore,
+		NextCursor: nextCursor,
+	}, nil
 }
 
 func (s *TokenService) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]TokenCandle, error) {
@@ -311,16 +429,43 @@ func (s *TokenService) ListCandlesByMint(ctx context.Context, mint string, resol
 	candles := make([]TokenCandle, 0, len(rows))
 	for _, row := range rows {
 		candles = append(candles, TokenCandle{
-			Time:   row.TimeUnix,
-			Open:   row.Open,
-			High:   row.High,
-			Low:    row.Low,
-			Close:  row.Close,
-			Volume: row.Volume,
+			Time:      row.TimeUnix,
+			Open:      row.Open,
+			High:      row.High,
+			Low:       row.Low,
+			Close:     row.Close,
+			Volume:    row.Volume,
+			IsGapFill: row.IsGapFill,
 		})
 	}
 
 	return candles, nil
+}
+
+func (s *TokenService) BuildRealtimeStatsPayload(ctx context.Context, mint string, nowTs int64) (*broadcaster.TokenStatsPayload, error) {
+	if s.model == nil {
+		return nil, fmt.Errorf("token read model not configured")
+	}
+
+	snapshot, err := s.model.FindTokenSnapshotByMint(ctx, mint)
+	if err != nil {
+		return nil, fmt.Errorf("find token snapshot by mint=%s: %w", mint, err)
+	}
+	if snapshot == nil {
+		return nil, ErrTokenNotFound
+	}
+
+	metrics, err := s.model.ListTradeMetricsForStatsByMint(ctx, mint)
+	if err != nil {
+		return nil, fmt.Errorf("list trade metrics for mint=%s: %w", mint, err)
+	}
+
+	payload, ok := broadcaster.BuildPayloadFromTradeMetrics(mint, metrics, nowTs)
+	if !ok {
+		return nil, nil
+	}
+
+	return &payload, nil
 }
 
 func (s *TokenService) GetTokenDetail(ctx context.Context, mint string) (TokenDetail, error) {
@@ -364,6 +509,7 @@ func (s *TokenService) GetTokenDetail(ctx context.Context, mint string) (TokenDe
 		Name:           snapshot.Name,
 		Symbol:         snapshot.Symbol,
 		URI:            snapshot.URI,
+		ImageURI:       snapshot.ImageURI,
 		Creator:        snapshot.Creator,
 		BondingCurve:   snapshot.BondingCurve,
 		TokenProgram:   snapshot.TokenProgram,
@@ -375,6 +521,13 @@ func (s *TokenService) GetTokenDetail(ctx context.Context, mint string) (TokenDe
 		Markets:        markets,
 		RecentTrades:   trades,
 		RecentEvents:   eventRows,
+	}
+	if snapshot.MigratedAt != nil || snapshot.CurrentStage == "pool" {
+		migrateEvent, err := s.events.FindLatestMigrateEventByMint(ctx, mint)
+		if err != nil {
+			return TokenDetail{}, fmt.Errorf("find latest migrate event by mint=%s: %w", mint, err)
+		}
+		detail.MigrateEvent = migrateEvent
 	}
 
 	if quote := buildQuote(snapshot, summary); quote != nil {
@@ -474,7 +627,7 @@ func buildPriceChanges(summary *store.TradeSummaryRecord) *TokenPriceChanges {
 	return &TokenPriceChanges{
 		M5:  pctChange(summary.LatestPrice, summary.Price5mAgo),
 		H1:  pctChange(summary.LatestPrice, summary.Price1hAgo),
-		H6:  pctChange(summary.LatestPrice, summary.Price6hAgo),
+		H4:  pctChange(summary.LatestPrice, summary.Price4hAgo),
 		H24: pctChange(summary.LatestPrice, summary.Price24hAgo),
 	}
 }
@@ -698,6 +851,34 @@ func normalizeResolution(resolution string) (string, error) {
 		return "1 day", nil
 	default:
 		return "", ErrInvalidCandleResolution
+	}
+}
+
+func normalizeTokenListView(view string) string {
+	switch strings.ToLower(strings.TrimSpace(view)) {
+	case "new":
+		return "new"
+	case "hot", "":
+		return defaultTokenListView
+	default:
+		return defaultTokenListView
+	}
+}
+
+func normalizeStatsWindow(window string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(window)) {
+	case "", "24h", "1d":
+		return "24 hours", nil
+	case "1m":
+		return "1 minute", nil
+	case "5m":
+		return "5 minutes", nil
+	case "1h":
+		return "1 hour", nil
+	case "4h":
+		return "4 hours", nil
+	default:
+		return "", ErrInvalidTokenListWindow
 	}
 }
 

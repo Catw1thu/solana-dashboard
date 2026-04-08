@@ -144,6 +144,33 @@ order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
 limit 1
 `
 
+const listLatestMigrateEventByMintSQL = `
+select
+    event_id,
+    schema_version,
+    chain,
+    protocol,
+    event_type,
+    commitment,
+    slot,
+    tx_signature,
+    tx_index,
+    instruction_source,
+    outer_index,
+    inner_index,
+    event_source,
+    event_unix_ts,
+    refs,
+    payload,
+    created_at
+from service_events
+where refs->>'mint' = $1
+  and protocol = 'pumpfun'
+  and event_type = 'migrate'
+order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+limit 1
+`
+
 const saveProjectionCheckpointSQL = `
 insert into projection_offsets (projector_name, last_log_id, updated_at)
 values ($1, $2, now())
@@ -357,6 +384,28 @@ func (s *ServiceEventStore) FindLatestCreateEventByMint(
 	rows, err := s.db.Pool.Query(ctx, listLatestCreateEventByMintSQL, mint)
 	if err != nil {
 		return nil, fmt.Errorf("query latest create event by mint=%s: %w", mint, err)
+	}
+	defer rows.Close()
+
+	entries, err := scanServiceEvents(rows, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	event := entries[0].Event
+	return &event, nil
+}
+
+func (s *ServiceEventStore) FindLatestMigrateEventByMint(
+	ctx context.Context,
+	mint string,
+) (*events.Envelope, error) {
+	rows, err := s.db.Pool.Query(ctx, listLatestMigrateEventByMintSQL, mint)
+	if err != nil {
+		return nil, fmt.Errorf("query latest migrate event by mint=%s: %w", mint, err)
 	}
 	defer rows.Close()
 
