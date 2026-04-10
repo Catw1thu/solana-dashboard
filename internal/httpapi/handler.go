@@ -27,6 +27,7 @@ type eventQuery interface {
 	ListTokens(ctx context.Context, opts query.TokenListOptions) ([]query.TokenListItem, error)
 	SearchTokens(ctx context.Context, rawQuery string, limit int) ([]query.TokenSearchItem, error)
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
+	ListServiceEventsByMintAfterLogID(ctx context.Context, mint string, afterLogID int64, limit int) ([]events.Envelope, error)
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]query.TokenTrade, error)
 	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]query.TokenCandle, error)
 	ListActivityByMint(ctx context.Context, mint string, limit int) ([]query.TokenActivity, error)

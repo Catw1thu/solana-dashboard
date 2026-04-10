@@ -11,22 +11,23 @@ import (
 
 type mockStore struct {
 	inserted bool
+	logID    int64
 	err      error
 }
 
-func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
-	return m.inserted, m.err
+func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, int64, error) {
+	return m.inserted, m.logID, m.err
 }
 
 func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	hub := realtime.NewHub()
-	store := &mockStore{inserted: true}
+	store := &mockStore{inserted: true, logID: 7}
 	service := NewService(hub, store)
 	defer service.Close()
-	globalCh := hub.Subscribe("global", 1)
-	defer hub.Unsubscribe(globalCh)
-	tokenCh := hub.Subscribe("token:base_1", 1)
-	defer hub.Unsubscribe(tokenCh)
+	globalSub := hub.Subscribe("global", 1)
+	defer hub.Unsubscribe(globalSub)
+	tokenSub := hub.Subscribe("token:base_1", 1)
+	defer hub.Unsubscribe(tokenSub)
 
 	event := events.Envelope{
 		EventID:   "solana:pumpamm:swap:testsig:outer:1",
@@ -69,16 +70,19 @@ func TestHandleEventAcceptsPumpAmmSwap(t *testing.T) {
 	}
 
 	select {
-	case got := <-globalCh:
+	case got := <-globalSub.Events:
 		if got.EventID != event.EventID {
 			t.Fatalf("expected event_id=%s, got %s", event.EventID, got.EventID)
+		}
+		if got.LogID != 7 {
+			t.Fatalf("expected log_id=7, got %d", got.LogID)
 		}
 	default:
 		t.Fatal("expected handled event to be published to global topic")
 	}
 
 	select {
-	case got := <-tokenCh:
+	case got := <-tokenSub.Events:
 		if got.EventID != event.EventID {
 			t.Fatalf("expected event_id=%s, got %s", event.EventID, got.EventID)
 		}

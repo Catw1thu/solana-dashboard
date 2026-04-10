@@ -618,13 +618,15 @@ func (b *Broadcaster) Sweep() {
 }
 
 func (b *Broadcaster) Run(ctx context.Context) error {
-	var hubEvents chan events.Envelope
+	var hubSub *realtime.Subscription
+	var hubEvents <-chan events.Envelope
 	if b.hub != nil {
-		hubEvents = b.hub.Subscribe("global", 1024)
-		defer b.hub.Unsubscribe(hubEvents)
+		hubSub = b.hub.Subscribe("global", 1024)
+		hubEvents = hubSub.Events
+		defer b.hub.Unsubscribe(hubSub)
 	}
 
-	if hubEvents == nil && b.nc != nil {
+	if hubSub == nil && b.nc != nil {
 		js, err := b.nc.JetStream()
 		if err != nil {
 			return err
@@ -650,6 +652,7 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 			return nil
 		case event, ok := <-hubEvents:
 			if !ok {
+				hubSub = nil
 				hubEvents = nil
 				continue
 			}

@@ -3,6 +3,7 @@ package events
 import "encoding/json"
 
 type Envelope struct {
+	LogID           int64           `json:"log_id,omitempty"`
 	SchemaVersion   int             `json:"schema_version"`
 	EventID         string          `json:"event_id"`
 	Chain           string          `json:"chain"`

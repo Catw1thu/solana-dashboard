@@ -137,8 +137,8 @@ func TestRunPublishesTokenStatsFromGlobalHub(t *testing.T) {
 	}()
 
 	mint := "Token111111111111111111111111111111111111"
-	tokenCh := hub.Subscribe("token:"+mint, 4)
-	defer hub.Unsubscribe(tokenCh)
+	tokenSub := hub.Subscribe("token:"+mint, 4)
+	defer hub.Unsubscribe(tokenSub)
 
 	payload := events.PumpfunTradePayload{
 		Mint:        mint,
@@ -160,7 +160,7 @@ func TestRunPublishesTokenStatsFromGlobalHub(t *testing.T) {
 		select {
 		case err := <-done:
 			t.Fatalf("broadcaster exited early: %v", err)
-		case event := <-tokenCh:
+		case event := <-tokenSub.Events:
 			if event.EventType == "token_stat" {
 				return
 			}

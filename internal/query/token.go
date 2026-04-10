@@ -33,8 +33,10 @@ var (
 
 type tokenEventReader interface {
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
+	ListServiceEventsByMintAfterLogID(ctx context.Context, mint string, afterLogID int64, limit int) ([]events.Envelope, error)
 	FindLatestCreateEventByMint(ctx context.Context, mint string) (*events.Envelope, error)
 	FindLatestMigrateEventByMint(ctx context.Context, mint string) (*events.Envelope, error)
+	LoadProjectionCheckpoint(ctx context.Context, projectorName string) (int64, error)
 }
 
 type tokenReadModel interface {
@@ -146,9 +148,10 @@ type TokenActivityCursor struct {
 }
 
 type TokenActivityPage struct {
-	Activity   []TokenActivity      `json:"activity"`
-	HasMore    bool                 `json:"has_more"`
-	NextCursor *TokenActivityCursor `json:"next_cursor,omitempty"`
+	Activity      []TokenActivity      `json:"activity"`
+	HasMore       bool                 `json:"has_more"`
+	NextCursor    *TokenActivityCursor `json:"next_cursor,omitempty"`
+	SnapshotLogID int64                `json:"snapshot_log_id"`
 }
 
 type TokenListItem struct {
@@ -340,6 +343,13 @@ func (s *TokenService) ListServiceEventsByMint(ctx context.Context, mint string,
 	return s.events.ListServiceEventsByMint(ctx, mint, limit)
 }
 
+func (s *TokenService) ListServiceEventsByMintAfterLogID(ctx context.Context, mint string, afterLogID int64, limit int) ([]events.Envelope, error) {
+	if s.events == nil {
+		return nil, nil
+	}
+	return s.events.ListServiceEventsByMintAfterLogID(ctx, mint, afterLogID, limit)
+}
+
 func (s *TokenService) ListTradesByMint(ctx context.Context, mint string, limit int) ([]TokenTrade, error) {
 	snapshot, err := s.requireTokenSnapshot(ctx, mint)
 	if err != nil {
@@ -382,6 +392,15 @@ func (s *TokenService) ListActivityPageByMint(ctx context.Context, mint string, 
 		}
 	}
 
+	snapshotLogID := int64(0)
+	if s.events != nil {
+		value, err := s.events.LoadProjectionCheckpoint(ctx, "token_read_model")
+		if err != nil {
+			return nil, fmt.Errorf("load token_read_model checkpoint: %w", err)
+		}
+		snapshotLogID = value
+	}
+
 	page, err := s.model.ListActivityEventsPageByMint(ctx, mint, clampLimit(limit, defaultActivityLimit), storeCursor)
 	if err != nil {
 		return nil, fmt.Errorf("list activity events: %w", err)
@@ -402,9 +421,10 @@ func (s *TokenService) ListActivityPageByMint(ctx context.Context, mint string, 
 	}
 
 	return &TokenActivityPage{
-		Activity:   items,
-		HasMore:    page.HasMore,
-		NextCursor: nextCursor,
+		Activity:      items,
+		HasMore:       page.HasMore,
+		NextCursor:    nextCursor,
+		SnapshotLogID: snapshotLogID,
 	}, nil
 }
 

@@ -17,6 +17,7 @@ import (
 
 type mockStore struct {
 	inserted bool
+	logID    int64
 	err      error
 }
 
@@ -32,8 +33,8 @@ type mockEventQuery struct {
 	err                  error
 }
 
-func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
-	return m.inserted, m.err
+func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, int64, error) {
+	return m.inserted, m.logID, m.err
 }
 
 func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error) {
@@ -44,6 +45,22 @@ func (m *mockEventQuery) ListServiceEventsByMint(ctx context.Context, mint strin
 		return m.events, nil
 	}
 	return m.events[:limit], nil
+}
+
+func (m *mockEventQuery) ListServiceEventsByMintAfterLogID(ctx context.Context, mint string, afterLogID int64, limit int) ([]events.Envelope, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	filtered := make([]events.Envelope, 0, len(m.events))
+	for _, event := range m.events {
+		if event.LogID > afterLogID {
+			filtered = append(filtered, event)
+		}
+	}
+	if len(filtered) <= limit {
+		return filtered, nil
+	}
+	return filtered[:limit], nil
 }
 
 func (m *mockEventQuery) ListTokens(ctx context.Context, opts query.TokenListOptions) ([]query.TokenListItem, error) {

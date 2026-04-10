@@ -34,6 +34,7 @@ insert into service_events (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 )
 on conflict (event_id) do nothing
+returning log_id
 `
 
 const listServiceEventsAfterLogIDSQL = `
@@ -70,6 +71,7 @@ where projector_name = $1
 
 const listServiceEventsByMintSQL = `
 select
+    log_id,
     event_id,
     schema_version,
     chain,
@@ -89,12 +91,40 @@ select
     created_at
 from service_events
 where refs->>'mint' = $1
-order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+order by log_id desc
 limit $2
+`
+
+const listServiceEventsByMintAfterLogIDSQL = `
+select
+    log_id,
+    event_id,
+    schema_version,
+    chain,
+    protocol,
+    event_type,
+    commitment,
+    slot,
+    tx_signature,
+    tx_index,
+    instruction_source,
+    outer_index,
+    inner_index,
+    event_source,
+    event_unix_ts,
+    refs,
+    payload,
+    created_at
+from service_events
+where refs->>'mint' = $1
+  and log_id > $2
+order by log_id asc
+limit $3
 `
 
 const listServiceEventsByPoolSQL = `
 select
+    log_id,
     event_id,
     schema_version,
     chain,
@@ -114,12 +144,13 @@ select
     created_at
 from service_events
 where refs->>'pool' = $1
-order by slot desc, tx_index desc, outer_index desc, inner_index desc nulls last
+order by log_id desc
 limit $2
 `
 
 const listLatestCreateEventByMintSQL = `
 select
+    log_id,
     event_id,
     schema_version,
     chain,
@@ -146,6 +177,7 @@ limit 1
 
 const listLatestMigrateEventByMintSQL = `
 select
+    log_id,
     event_id,
     schema_version,
     chain,
@@ -193,14 +225,15 @@ func NewServiceEventStore(db *db.DB) *ServiceEventStore {
 	return &ServiceEventStore{db: db}
 }
 
-func (s *ServiceEventStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
+func (s *ServiceEventStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, int64, error) {
 	refsJSON, err := json.Marshal(event.Refs)
 	if err != nil {
-		return false, fmt.Errorf("marshal refs: %w", err)
+		return false, 0, fmt.Errorf("marshal refs: %w", err)
 	}
 
 	payloadJSON := []byte(event.Payload)
-	tag, err := s.db.Pool.Exec(
+	var logID int64
+	err = s.db.Pool.QueryRow(
 		ctx, insertServiceEventSQL, event.EventID,
 		event.SchemaVersion,
 		event.Chain,
@@ -217,12 +250,15 @@ func (s *ServiceEventStore) InsertServiceEvent(ctx context.Context, event *event
 		event.EventUnixTS,
 		refsJSON,
 		payloadJSON,
-	)
+	).Scan(&logID)
 	if err != nil {
-		return false, fmt.Errorf("insert service event: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, 0, nil
+		}
+		return false, 0, fmt.Errorf("insert service event: %w", err)
 	}
 
-	return tag.RowsAffected() == 1, nil
+	return true, logID, nil
 }
 
 func (s *ServiceEventStore) ListServiceEventsAfterLogID(
@@ -353,6 +389,31 @@ func (s *ServiceEventStore) ListServiceEventsByMint(
 	return eventsList, nil
 }
 
+func (s *ServiceEventStore) ListServiceEventsByMintAfterLogID(
+	ctx context.Context,
+	mint string,
+	afterLogID int64,
+	limit int,
+) ([]events.Envelope, error) {
+	rows, err := s.db.Pool.Query(ctx, listServiceEventsByMintAfterLogIDSQL, mint, afterLogID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query service events by mint=%s after log_id=%d: %w", mint, afterLogID, err)
+	}
+	defer rows.Close()
+
+	entries, err := scanServiceEvents(rows, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	eventsList := make([]events.Envelope, 0, len(entries))
+	for _, entry := range entries {
+		eventsList = append(eventsList, entry.Event)
+	}
+
+	return eventsList, nil
+}
+
 func (s *ServiceEventStore) ListServiceEventsByPool(
 	ctx context.Context,
 	pool string,
@@ -438,6 +499,7 @@ func scanServiceEvents(rows pgx.Rows, limit int) ([]ServiceEventLogEntry, error)
 		)
 
 		err := rows.Scan(
+			&entry.LogID,
 			&entry.Event.EventID,
 			&entry.Event.SchemaVersion,
 			&entry.Event.Chain,
@@ -461,6 +523,7 @@ func scanServiceEvents(rows pgx.Rows, limit int) ([]ServiceEventLogEntry, error)
 		}
 
 		entry.Event.Slot = uint64(slot)
+		entry.Event.LogID = entry.LogID
 		entry.Event.TxIndex = uint64(txIndex)
 		instructionRef.Source = source
 		instructionRef.OuterIndex = int(outerIndex)

@@ -10,7 +10,7 @@ import (
 const wrappedSolMint = "So11111111111111111111111111111111111111112"
 
 type eventStore interface {
-	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error)
+	InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, int64, error)
 }
 
 type Service struct {
@@ -53,11 +53,12 @@ func (s *Service) HandleDecodedEvent(ctx context.Context, decoded events.Decoded
 		return fmt.Errorf("encode payload: %w", err)
 	}
 
-	inserted, err := s.store.InsertServiceEvent(ctx, &event)
+	inserted, logID, err := s.store.InsertServiceEvent(ctx, &event)
 	if err != nil {
 		return fmt.Errorf("insert service event: %w", err)
 	}
 	if inserted {
+		event.LogID = logID
 		// Publish to a specific token topic if we can determine the mint
 		if mint := extractMint(event.Refs, payload); mint != "" {
 			s.hub.Publish("token:"+mint, event)
@@ -103,12 +104,12 @@ func resolveNonSolMint(baseMint string, quoteMint string) string {
 	}
 }
 
-func (s *Service) Subscribe(topic string, buffer int) chan events.Envelope {
+func (s *Service) Subscribe(topic string, buffer int) *realtime.Subscription {
 	return s.hub.Subscribe(topic, buffer)
 }
 
-func (s *Service) Unsubscribe(ch chan events.Envelope) {
-	s.hub.Unsubscribe(ch)
+func (s *Service) Unsubscribe(sub *realtime.Subscription) {
+	s.hub.Unsubscribe(sub)
 }
 
 func (s *Service) Close() {}

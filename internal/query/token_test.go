@@ -27,6 +27,22 @@ func (m *mockTokenEventReader) ListServiceEventsByMint(ctx context.Context, mint
 	return m.events[:limit], nil
 }
 
+func (m *mockTokenEventReader) ListServiceEventsByMintAfterLogID(ctx context.Context, mint string, afterLogID int64, limit int) ([]events.Envelope, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	filtered := make([]events.Envelope, 0, len(m.events))
+	for _, event := range m.events {
+		if event.LogID > afterLogID {
+			filtered = append(filtered, event)
+		}
+	}
+	if len(filtered) <= limit {
+		return filtered, nil
+	}
+	return filtered[:limit], nil
+}
+
 func (m *mockTokenEventReader) FindLatestCreateEventByMint(ctx context.Context, mint string) (*events.Envelope, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -39,6 +55,13 @@ func (m *mockTokenEventReader) FindLatestMigrateEventByMint(ctx context.Context,
 		return nil, m.err
 	}
 	return m.migrateEvent, nil
+}
+
+func (m *mockTokenEventReader) LoadProjectionCheckpoint(ctx context.Context, projectorName string) (int64, error) {
+	if m.err != nil {
+		return 0, m.err
+	}
+	return 123, nil
 }
 
 type mockTokenReadModel struct {
