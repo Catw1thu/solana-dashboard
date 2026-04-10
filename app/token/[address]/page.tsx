@@ -376,8 +376,17 @@ export default function TokenDetailPage() {
   const needsActivityHeadRefreshRef = useRef(false);
   const realtimeCandlePatchRef = useRef(false);
 
-  const { candles, setCandles, resolution, setResolution, reload } =
-    useTradeFeed(address);
+  const {
+    candles,
+    setCandles,
+    resolution,
+    setResolution,
+    isHistoryLoaded,
+    hasMoreHistory,
+    isLoadingMoreHistory,
+    loadMoreHistory,
+    reload,
+  } = useTradeFeed(address);
 
   useEffect(() => {
     tokenDetailRef.current = tokenDetail;
@@ -1137,6 +1146,9 @@ export default function TokenDetailPage() {
               resolution as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
             }
             onTimeframeChange={(tf) => setResolution(tf)}
+            onLoadMoreHistory={loadMoreHistory}
+            canLoadMoreHistory={isHistoryLoaded && hasMoreHistory}
+            isLoadingMoreHistory={isLoadingMoreHistory}
           />
         </div>
 

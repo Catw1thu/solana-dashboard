@@ -57,8 +57,21 @@ export const API = {
   searchTokens: (query: string, limit: number = 8) =>
     `${API_BASE_URL}/search/tokens?q=${encodeURIComponent(query)}&limit=${limit}`,
   tokenDetail: (mint: string) => `${API_BASE_URL}/tokens/${mint}`,
-  tokenCandles: (mint: string, resolution: string) =>
-    `${API_BASE_URL}/tokens/${mint}/candles?resolution=${resolution}`,
+  tokenCandles: (
+    mint: string,
+    resolution: string,
+    limit: number = 300,
+    beforeTime?: number,
+  ) => {
+    const params = new URLSearchParams({
+      resolution,
+      limit: String(limit),
+    });
+    if (beforeTime != null) {
+      params.set("before_time", String(beforeTime));
+    }
+    return `${API_BASE_URL}/tokens/${mint}/candles?${params.toString()}`;
+  },
   tokenTrades: (mint: string, limit: number = 100) =>
     `${API_BASE_URL}/tokens/${mint}/trades?limit=${limit}`,
   tokenActivity: (

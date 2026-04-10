@@ -8,6 +8,7 @@ import {
   IChartApi,
   ISeriesMarkersPluginApi,
   ISeriesApi,
+  LogicalRange,
   SeriesMarker,
   Time,
   createSeriesMarkers,
@@ -44,6 +45,9 @@ interface TradingChartProps {
   markers?: ChartMarkerData[];
   initialTimeframe?: Timeframe;
   onTimeframeChange?: (tf: Timeframe) => void;
+  onLoadMoreHistory?: () => void;
+  canLoadMoreHistory?: boolean;
+  isLoadingMoreHistory?: boolean;
   colors?: {
     backgroundColor?: string;
     lineColor?: string;
@@ -213,6 +217,9 @@ export const TradingChart = ({
   markers = [],
   initialTimeframe = "1m",
   onTimeframeChange,
+  onLoadMoreHistory,
+  canLoadMoreHistory = false,
+  isLoadingMoreHistory = false,
   colors = {
     backgroundColor: "transparent",
     lineColor: "#2962FF",
@@ -228,6 +235,7 @@ export const TradingChart = ({
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const markerMapRef = useRef<Map<string, ChartMarkerData>>(new Map());
   const liveTickRef = useRef<CandleData | undefined>(liveTick);
+  const loadMoreRequestedRef = useRef(false);
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
   const [legend, setLegend] = useState<LegendData | null>(null);
@@ -250,6 +258,7 @@ export const TradingChart = ({
       })) satisfies SeriesMarker<Time>[],
     [markers],
   );
+  const oldestCandleTime = sortedData[0]?.time;
 
   const previousDataRef = useRef<CandleData[]>(sortedData);
   const dataRef = useRef<CandleData[]>(sortedData);
@@ -266,6 +275,11 @@ export const TradingChart = ({
     }
     markerMapRef.current = nextMap;
   }, [markers]);
+  useEffect(() => {
+    if (!isLoadingMoreHistory) {
+      loadMoreRequestedRef.current = false;
+    }
+  }, [canLoadMoreHistory, isLoadingMoreHistory, oldestCandleTime]);
 
   const updateLegend = useCallback(
     (candle?: LegendCandle, volume?: LegendVolume) => {
@@ -419,6 +433,27 @@ export const TradingChart = ({
       );
     });
 
+    const handleVisibleLogicalRangeChange = (range: LogicalRange | null) => {
+      if (
+        !range ||
+        !onLoadMoreHistory ||
+        !canLoadMoreHistory ||
+        isLoadingMoreHistory ||
+        dataRef.current.length === 0 ||
+        loadMoreRequestedRef.current
+      ) {
+        return;
+      }
+
+      if (range.from <= 25) {
+        loadMoreRequestedRef.current = true;
+        onLoadMoreHistory();
+      }
+    };
+    chart
+      .timeScale()
+      .subscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
+
     const handleResize = () => {
       if (!chartContainerRef.current) return;
       chart.applyOptions({
@@ -435,12 +470,18 @@ export const TradingChart = ({
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
       markerPluginRef.current = null;
+      chart
+        .timeScale()
+        .unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
       chart.remove();
     };
   }, [
     applyFullChartData,
+    canLoadMoreHistory,
     colors.backgroundColor,
     colors.textColor,
+    isLoadingMoreHistory,
+    onLoadMoreHistory,
     updateLegend,
   ]);
 

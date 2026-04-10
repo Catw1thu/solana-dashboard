@@ -32,8 +32,6 @@ type CandlePatchResult = {
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const DEFAULT_TOKEN_DECIMALS = 6;
 const DEFAULT_QUOTE_DECIMALS = 9;
-const MAX_GAPFILL_BUCKETS = 2048;
-
 const RESOLUTION_SECONDS: Record<CandleResolution, number> = {
   "1m": 60,
   "5m": 5 * 60,
@@ -642,25 +640,7 @@ export function applyTradePatchToCandles(
     return { candles: next, needsReload: false };
   }
 
-  const gapBuckets = Math.floor((bucketTime - last.time) / bucketSize) - 1;
-  if (gapBuckets > MAX_GAPFILL_BUCKETS) {
-    return { candles, needsReload: true };
-  }
-
   const previousClose = last.close;
-  for (let offset = 1; offset <= gapBuckets; offset += 1) {
-    const gapTime = last.time + offset * bucketSize;
-    next.push({
-      time: gapTime,
-      open: previousClose,
-      high: previousClose,
-      low: previousClose,
-      close: previousClose,
-      volume: 0,
-      is_gapfill: true,
-    });
-  }
-
   next.push({
     time: bucketTime,
     open: previousClose,
@@ -670,13 +650,6 @@ export function applyTradePatchToCandles(
     volume: patch.volume,
     is_gapfill: false,
   });
-
-  if (candles.length > 0 && next.length > candles.length) {
-    return {
-      candles: next.slice(next.length - candles.length),
-      needsReload: false,
-    };
-  }
 
   return { candles: next, needsReload: false };
 }
