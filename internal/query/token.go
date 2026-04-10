@@ -48,7 +48,7 @@ type tokenReadModel interface {
 	ListActivityEventsPageByMint(ctx context.Context, mint string, limit int, cursor *store.ActivityEventCursor) (*store.ActivityEventPage, error)
 	LoadTradeSummaryByMint(ctx context.Context, mint string) (*store.TradeSummaryRecord, error)
 	ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]store.TradeMetricPoint, error)
-	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]store.TokenCandleRecord, error)
+	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]store.TokenCandleRecord, error)
 }
 
 type TokenCreateSummary struct {
@@ -408,7 +408,7 @@ func (s *TokenService) ListActivityPageByMint(ctx context.Context, mint string, 
 	}, nil
 }
 
-func (s *TokenService) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]TokenCandle, error) {
+func (s *TokenService) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]TokenCandle, error) {
 	if s.model == nil {
 		return nil, fmt.Errorf("token read model not configured")
 	}
@@ -421,7 +421,7 @@ func (s *TokenService) ListCandlesByMint(ctx context.Context, mint string, resol
 		return nil, err
 	}
 
-	rows, err := s.model.ListCandlesByMint(ctx, mint, interval, limit)
+	rows, err := s.model.ListCandlesByMint(ctx, mint, interval, limit, beforeTime)
 	if err != nil {
 		return nil, fmt.Errorf("list candles: %w", err)
 	}

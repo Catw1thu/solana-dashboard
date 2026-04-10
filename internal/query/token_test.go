@@ -186,7 +186,7 @@ func (m *mockTokenReadModel) ListTradeMetricsForStatsByMint(ctx context.Context,
 	return m.tradeMetrics, nil
 }
 
-func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]store.TokenCandleRecord, error) {
+func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]store.TokenCandleRecord, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

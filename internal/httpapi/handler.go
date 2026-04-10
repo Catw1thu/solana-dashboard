@@ -28,7 +28,7 @@ type eventQuery interface {
 	SearchTokens(ctx context.Context, rawQuery string, limit int) ([]query.TokenSearchItem, error)
 	ListServiceEventsByMint(ctx context.Context, mint string, limit int) ([]events.Envelope, error)
 	ListTradesByMint(ctx context.Context, mint string, limit int) ([]query.TokenTrade, error)
-	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]query.TokenCandle, error)
+	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]query.TokenCandle, error)
 	ListActivityByMint(ctx context.Context, mint string, limit int) ([]query.TokenActivity, error)
 	ListActivityPageByMint(ctx context.Context, mint string, limit int, cursor *query.TokenActivityCursor) (*query.TokenActivityPage, error)
 	GetTokenDetail(ctx context.Context, mint string) (query.TokenDetail, error)
@@ -340,7 +340,13 @@ func (h *Handler) ListTokenCandles(w http.ResponseWriter, r *http.Request) {
 		resolution = "1m"
 	}
 
-	candles, err := h.eventQuery.ListCandlesByMint(r.Context(), mint, resolution, limit)
+	beforeTime, err := parseBeforeUnixTime(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	candles, err := h.eventQuery.ListCandlesByMint(r.Context(), mint, resolution, limit, beforeTime)
 	if err != nil {
 		if errors.Is(err, query.ErrInvalidCandleResolution) {
 			http.Error(w, "invalid resolution", http.StatusBadRequest)
@@ -455,6 +461,20 @@ func parseActivityCursor(r *http.Request) (*query.TokenActivityCursor, error) {
 		Slot:        slot,
 		InsertSeq:   insertSeq,
 	}, nil
+}
+
+func parseBeforeUnixTime(r *http.Request) (*int64, error) {
+	raw := r.URL.Query().Get("before_time")
+	if raw == "" {
+		return nil, nil
+	}
+
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid before_time")
+	}
+
+	return &value, nil
 }
 
 func parseListLimit(r *http.Request, defaultLimit int, maxLimit int) (int, error) {

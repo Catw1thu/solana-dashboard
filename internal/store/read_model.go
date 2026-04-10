@@ -954,7 +954,7 @@ from (
 order by event_unix_ts asc, slot asc, insert_seq asc
 `
 
-const listTokenCandlesByMintSQL = `
+const listTokenCandlesByMintSQLTemplate = `
 with meta as (
     select
         decimals,
@@ -963,129 +963,39 @@ with meta as (
     from token_metadata_current
     where mint = $1
 ),
-enriched as (
-    select
-        time_bucket($2::interval, t.event_time) as bucket,
-        t.event_time,
-		t.slot,
-		t.insert_seq,
-        trade_price_quote(
-            t.quote_amount_raw,
-            t.token_amount_raw,
-            m.decimals,
-            resolved_quote_decimals(t.quote_mint, m.metadata_quote_mint, m.metadata_quote_decimals)
-        ) as price,
-        scale_amount_numeric(
-            t.quote_amount_raw,
-            resolved_quote_decimals(t.quote_mint, m.metadata_quote_mint, m.metadata_quote_decimals)
-        ) as volume_quote
-    from token_trade_events t
-    left join meta m on true
-    where t.mint = $1
-),
-ranked as (
-    select
-        bucket,
-        event_time,
-		slot,
-		insert_seq,
-        price,
-        volume_quote,
-		row_number() over (partition by bucket order by event_time asc, slot asc, insert_seq asc) as rn_open,
-		row_number() over (partition by bucket order by event_time desc, slot desc, insert_seq desc) as rn_close
-    from enriched
-),
-aggregated as (
-    select
-        bucket,
-        max(price) filter (where rn_open = 1)::double precision as actual_open,
-        max(price)::double precision as actual_high,
-        min(price)::double precision as actual_low,
-        max(price) filter (where rn_close = 1)::double precision as actual_close,
-        coalesce(sum(volume_quote), 0)::double precision as volume
-    from ranked
-    group by bucket
-),
-continuous as (
-    select
-        bucket,
-        coalesce(
-            lag(actual_close) over (order by bucket),
-            actual_open
-        )::double precision as open,
-        greatest(
-            actual_high,
-            coalesce(lag(actual_close) over (order by bucket), actual_open)
-        )::double precision as high,
-        least(
-            actual_low,
-            coalesce(lag(actual_close) over (order by bucket), actual_open)
-        )::double precision as low,
-        actual_close as close,
-        volume
-    from aggregated
-),
-range_bounds as (
-    select
-        max(bucket) as end_bucket
-    from continuous
-),
-series as (
-    select generate_series(
-        end_bucket - (($3::int - 1) * ($2::interval)),
-        end_bucket,
-        $2::interval
-    ) as bucket
-    from range_bounds
-    where end_bucket is not null
-),
-windowed as (
-    select
-        s.bucket,
-        c.open as actual_open,
-        c.high as actual_high,
-        c.low as actual_low,
-        c.close as actual_close,
-        c.volume as actual_volume,
-        count(c.close) over (order by s.bucket) as close_group
-    from series s
-    left join continuous c on c.bucket = s.bucket
-),
-gapfilled as (
-    select
-        bucket,
-        coalesce(
-            actual_open,
-            max(actual_close) over (partition by close_group)
-        )::double precision as open,
-        coalesce(
-            actual_high,
-            max(actual_close) over (partition by close_group)
-        )::double precision as high,
-        coalesce(
-            actual_low,
-            max(actual_close) over (partition by close_group)
-        )::double precision as low,
-        coalesce(
-            actual_close,
-            max(actual_close) over (partition by close_group)
-        )::double precision as close,
-        coalesce(actual_volume, 0)::double precision as volume,
-        (actual_close is null) as is_gapfill
-    from windowed
-),
 limited as (
     select
-        extract(epoch from bucket)::bigint as time_unix,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        is_gapfill
-    from gapfilled
-    where close is not null
-    order by bucket desc
+        extract(epoch from c.bucket)::bigint as time_unix,
+        normalize_raw_trade_price(
+            c.open_raw_price,
+            m.decimals,
+            resolved_quote_decimals(c.quote_mint_sample, m.metadata_quote_mint, m.metadata_quote_decimals)
+        )::double precision as open,
+        normalize_raw_trade_price(
+            c.high_raw_price,
+            m.decimals,
+            resolved_quote_decimals(c.quote_mint_sample, m.metadata_quote_mint, m.metadata_quote_decimals)
+        )::double precision as high,
+        normalize_raw_trade_price(
+            c.low_raw_price,
+            m.decimals,
+            resolved_quote_decimals(c.quote_mint_sample, m.metadata_quote_mint, m.metadata_quote_decimals)
+        )::double precision as low,
+        normalize_raw_trade_price(
+            c.close_raw_price,
+            m.decimals,
+            resolved_quote_decimals(c.quote_mint_sample, m.metadata_quote_mint, m.metadata_quote_decimals)
+        )::double precision as close,
+        scale_amount_numeric(
+            c.volume_quote_raw,
+            resolved_quote_decimals(c.quote_mint_sample, m.metadata_quote_mint, m.metadata_quote_decimals)
+        )::double precision as volume,
+        false as is_gapfill
+    from %s c
+    left join meta m on true
+    where c.mint = $1
+      and ($2::bigint is null or c.bucket < to_timestamp($2))
+    order by c.bucket desc
     limit $3
 )
 select
@@ -1099,6 +1009,15 @@ select
 from limited
 order by time_unix asc
 `
+
+var candleAggregateViews = map[string]string{
+	"1 minute":   "token_candles_1m",
+	"5 minutes":  "token_candles_5m",
+	"15 minutes": "token_candles_15m",
+	"1 hour":     "token_candles_1h",
+	"4 hours":    "token_candles_4h",
+	"1 day":      "token_candles_1d",
+}
 
 type ReadModelStore struct {
 	db *db.DB
@@ -1309,6 +1228,14 @@ type TokenCandleRecord struct {
 
 func NewReadModelStore(database *db.DB) *ReadModelStore {
 	return &ReadModelStore{db: database}
+}
+
+func candleAggregateView(resolution string) (string, error) {
+	viewName, ok := candleAggregateViews[resolution]
+	if !ok {
+		return "", fmt.Errorf("unsupported candle resolution %q", resolution)
+	}
+	return viewName, nil
 }
 
 func unixToTimestampSeconds(ts int64) float64 {
@@ -1769,8 +1696,20 @@ func (s *ReadModelStore) ListTradeMetricsForStatsByMint(ctx context.Context, min
 	return metrics, nil
 }
 
-func (s *ReadModelStore) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]TokenCandleRecord, error) {
-	rows, err := s.db.Pool.Query(ctx, listTokenCandlesByMintSQL, mint, resolution, limit)
+func (s *ReadModelStore) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]TokenCandleRecord, error) {
+	viewName, err := candleAggregateView(resolution)
+	if err != nil {
+		return nil, err
+	}
+
+	query := fmt.Sprintf(listTokenCandlesByMintSQLTemplate, viewName)
+
+	var beforeParam any
+	if beforeTime != nil {
+		beforeParam = *beforeTime
+	}
+
+	rows, err := s.db.Pool.Query(ctx, query, mint, beforeParam, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list candles by mint=%s resolution=%s: %w", mint, resolution, err)
 	}

@@ -21,14 +21,15 @@ type mockStore struct {
 }
 
 type mockEventQuery struct {
-	events   []events.Envelope
-	detail   query.TokenDetail
-	list     []query.TokenListItem
-	search   []query.TokenSearchItem
-	trades   []query.TokenTrade
-	candles  []query.TokenCandle
-	activity []query.TokenActivity
-	err      error
+	events               []events.Envelope
+	detail               query.TokenDetail
+	list                 []query.TokenListItem
+	search               []query.TokenSearchItem
+	trades               []query.TokenTrade
+	candles              []query.TokenCandle
+	activity             []query.TokenActivity
+	lastCandleBeforeTime *int64
+	err                  error
 }
 
 func (m *mockStore) InsertServiceEvent(ctx context.Context, event *events.Envelope) (bool, error) {
@@ -75,10 +76,11 @@ func (m *mockEventQuery) ListTradesByMint(ctx context.Context, mint string, limi
 	return m.trades[:limit], nil
 }
 
-func (m *mockEventQuery) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int) ([]query.TokenCandle, error) {
+func (m *mockEventQuery) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]query.TokenCandle, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
+	m.lastCandleBeforeTime = beforeTime
 	if len(m.candles) <= limit {
 		return m.candles, nil
 	}
@@ -247,6 +249,31 @@ func TestListTokensReturnsWindowBuySellCounts(t *testing.T) {
 	}
 	if response.Tokens[0].WindowBuys != 7 || response.Tokens[0].WindowSells != 5 {
 		t.Fatalf("expected buy/sell counts to round-trip, got %+v", response.Tokens[0])
+	}
+}
+
+func TestListTokenCandlesPassesBeforeTime(t *testing.T) {
+	hub := realtime.NewHub()
+	store := &mockStore{inserted: true}
+	service := ingest.NewService(hub, store)
+	defer service.Close()
+
+	eventQuery := &mockEventQuery{
+		candles: []query.TokenCandle{{Time: 1700000000, Open: 1, High: 1, Low: 1, Close: 1, Volume: 1}},
+	}
+	handler := NewHandler(service, eventQuery)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tokens/{mint}/candles", handler.ListTokenCandles)
+
+	req := httptest.NewRequest(http.MethodGet, "/tokens/mint_1/candles?resolution=1m&limit=1&before_time=1700000000", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if eventQuery.lastCandleBeforeTime == nil || *eventQuery.lastCandleBeforeTime != 1700000000 {
+		t.Fatalf("expected before_time to round-trip, got %#v", eventQuery.lastCandleBeforeTime)
 	}
 }
 
