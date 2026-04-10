@@ -13,8 +13,12 @@ import {
 import { WS_URL } from "@/config/api";
 
 type WsMessage = {
+  log_id?: number;
   event_type?: string;
   payload?: unknown;
+  refs?: {
+    mint?: string | null;
+  };
   [key: string]: unknown;
 };
 
@@ -22,8 +26,9 @@ type MessageHandler = (msg: WsMessage) => void;
 
 interface WebSocketContextType {
   isConnected: boolean;
-  subscribe: (topic: string) => void;
+  subscribe: (topic: string, options?: { sinceLogId?: number }) => void;
   unsubscribe: (topic: string) => void;
+  setTopicCursor: (topic: string, logId: number) => void;
   addMessageListener: (handler: MessageHandler) => () => void;
 }
 
@@ -47,6 +52,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   const subscribedTopicsRef = useRef<Set<string>>(new Set());
   const topicRefCountsRef = useRef<Map<string, number>>(new Map());
+  const topicCursorRef = useRef<Map<string, number>>(new Map());
   const pendingUnsubscribeRef = useRef<Map<string, number>>(new Map());
   const listenersRef = useRef<Set<MessageHandler>>(new Set());
 
@@ -84,7 +90,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       console.log(`[WS] Connected to ${WS_URL}`);
 
       subscribedTopicsRef.current.forEach((topic) => {
-        if (sendJson({ action: "subscribe", topic })) {
+        const sinceLogId = topicCursorRef.current.get(topic);
+        if (
+          sendJson({
+            action: "subscribe",
+            topic,
+            since_log_id: sinceLogId && sinceLogId > 0 ? sinceLogId : undefined,
+          })
+        ) {
           console.log(`[WS] Subscribed to ${topic}`);
         }
       });
@@ -93,6 +106,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data) as WsMessage;
+        const mint = message.refs?.mint;
+        if (
+          typeof message.log_id === "number" &&
+          Number.isFinite(message.log_id) &&
+          mint
+        ) {
+          const topic = `token:${mint}`;
+          const current = topicCursorRef.current.get(topic) ?? 0;
+          if (message.log_id > current) {
+            topicCursorRef.current.set(topic, message.log_id);
+          }
+        }
         listenersRef.current.forEach((handler) => handler(message));
       } catch (error) {
         console.error("[WS] Failed to parse incoming message:", error);
@@ -194,16 +219,32 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const subscribe = useCallback(
-    (topic: string) => {
+    (topic: string, options?: { sinceLogId?: number }) => {
       if (!topic) return;
 
       clearPendingUnsubscribe(topic);
+      if (
+        typeof options?.sinceLogId === "number" &&
+        Number.isFinite(options.sinceLogId)
+      ) {
+        const currentCursor = topicCursorRef.current.get(topic) ?? 0;
+        if (options.sinceLogId > currentCursor) {
+          topicCursorRef.current.set(topic, options.sinceLogId);
+        }
+      }
       const currentCount = topicRefCountsRef.current.get(topic) ?? 0;
       topicRefCountsRef.current.set(topic, currentCount + 1);
       if (currentCount > 0) return;
 
       subscribedTopicsRef.current.add(topic);
-      if (sendJson({ action: "subscribe", topic })) {
+      const sinceLogId = topicCursorRef.current.get(topic);
+      if (
+        sendJson({
+          action: "subscribe",
+          topic,
+          since_log_id: sinceLogId && sinceLogId > 0 ? sinceLogId : undefined,
+        })
+      ) {
         console.log(`[WS] Subscribed to ${topic}`);
       }
     },
@@ -225,6 +266,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           }
 
           subscribedTopicsRef.current.delete(topic);
+          topicCursorRef.current.delete(topic);
           pendingUnsubscribeRef.current.delete(topic);
           if (sendJson({ action: "unsubscribe", topic })) {
             console.log(`[WS] Unsubscribed from ${topic}`);
@@ -240,6 +282,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     [clearPendingUnsubscribe, sendJson],
   );
 
+  const setTopicCursor = useCallback((topic: string, logId: number) => {
+    if (!topic || !Number.isFinite(logId) || logId <= 0) return;
+
+    const current = topicCursorRef.current.get(topic) ?? 0;
+    if (logId > current) {
+      topicCursorRef.current.set(topic, logId);
+    }
+  }, []);
+
   const addMessageListener = useCallback((handler: MessageHandler) => {
     listenersRef.current.add(handler);
     return () => {
@@ -248,8 +299,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ isConnected, subscribe, unsubscribe, addMessageListener }),
-    [isConnected, subscribe, unsubscribe, addMessageListener],
+    () => ({
+      isConnected,
+      subscribe,
+      unsubscribe,
+      setTopicCursor,
+      addMessageListener,
+    }),
+    [isConnected, subscribe, unsubscribe, setTopicCursor, addMessageListener],
   );
 
   return (

@@ -41,6 +41,7 @@ const ACTIVITY_LOAD_MORE_THRESHOLD = 240;
 const ACTIVITY_VIRTUAL_OVERSCAN = 12;
 
 type WsMessage = {
+  log_id?: number;
   event_type?: string;
   refs?: {
     mint?: string | null;
@@ -173,6 +174,22 @@ function mergeActivities(
   const ordered =
     mode === "append" ? [...current, ...incoming] : [...incoming, ...current];
   for (const item of ordered) {
+    if (seen.has(item.event_id)) continue;
+    seen.add(item.event_id);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function mergeBufferedEnvelopes(
+  current: TokenEventEnvelope[],
+  incoming: TokenEventEnvelope[],
+): TokenEventEnvelope[] {
+  if (incoming.length === 0) return current;
+
+  const seen = new Set<string>();
+  const merged: TokenEventEnvelope[] = [];
+  for (const item of [...current, ...incoming]) {
     if (seen.has(item.event_id)) continue;
     seen.add(item.event_id);
     merged.push(item);
@@ -356,13 +373,15 @@ export default function TokenDetailPage() {
   const [nowMs, setNowMs] = useState<number | null>(null);
   const [selectedStatsWindow, setSelectedStatsWindow] =
     useState<StatsWindow>("1m");
-  const { isConnected, subscribe, unsubscribe, addMessageListener } =
+  const { isConnected, subscribe, unsubscribe, setTopicCursor, addMessageListener } =
     useAppWebSocket();
   const refreshTimerRef = useRef<number | null>(null);
   const lastRefreshAtRef = useRef<number>(0);
   const hasConnectedOnceRef = useRef(false);
   const wasConnectedRef = useRef(false);
   const tokenDetailRef = useRef<TokenDetail | null>(null);
+  const applyRealtimeEnvelopeRef =
+    useRef<(envelope: TokenEventEnvelope) => void>(() => {});
   const candlesRef = useRef<TokenCandle[]>([]);
   const resolutionRef = useRef<CandleResolution>("1m");
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
@@ -372,6 +391,9 @@ export default function TokenDetailPage() {
   const hasMoreActivitiesRef = useRef(false);
   const isActivityLoadingRef = useRef(false);
   const isActivityLoadingMoreRef = useRef(false);
+  const activitySnapshotLogIdRef = useRef(0);
+  const activityBootstrapPendingRef = useRef(true);
+  const bufferedBootstrapEnvelopesRef = useRef<TokenEventEnvelope[]>([]);
   const pendingRealtimeActivitiesRef = useRef<TokenActivity[]>([]);
   const needsActivityHeadRefreshRef = useRef(false);
   const realtimeCandlePatchRef = useRef(false);
@@ -409,7 +431,9 @@ export default function TokenDetailPage() {
   useEffect(() => {
     if (!address) return;
     const topic = `token:${address}`;
-    subscribe(topic);
+    activityBootstrapPendingRef.current = true;
+    bufferedBootstrapEnvelopesRef.current = [];
+    subscribe(topic, { sinceLogId: activitySnapshotLogIdRef.current });
 
     return () => {
       unsubscribe(topic);
@@ -427,6 +451,9 @@ export default function TokenDetailPage() {
     hasMoreActivitiesRef.current = false;
     isActivityLoadingRef.current = false;
     isActivityLoadingMoreRef.current = false;
+    activitySnapshotLogIdRef.current = 0;
+    activityBootstrapPendingRef.current = true;
+    bufferedBootstrapEnvelopesRef.current = [];
     pendingRealtimeActivitiesRef.current = [];
     needsActivityHeadRefreshRef.current = false;
     realtimeCandlePatchRef.current = false;
@@ -512,6 +539,7 @@ export default function TokenDetailPage() {
         if (res.ok) {
           const data = (await res.json()) as TokenActivityPage;
           const incoming = data.activity || [];
+          const snapshotLogId = data.snapshot_log_id ?? 0;
 
           startTransition(() => {
             if (mode === "append") {
@@ -541,6 +569,20 @@ export default function TokenDetailPage() {
             setHasMoreActivities(Boolean(data.has_more));
           });
 
+          if (mode === "reset") {
+            activitySnapshotLogIdRef.current = snapshotLogId;
+            setTopicCursor(`token:${address}`, snapshotLogId);
+
+            const buffered = bufferedBootstrapEnvelopesRef.current;
+            bufferedBootstrapEnvelopesRef.current = [];
+            activityBootstrapPendingRef.current = false;
+            for (const envelope of [...buffered]
+              .filter((item) => (item.log_id ?? 0) > snapshotLogId)
+              .sort((left, right) => (left.log_id ?? 0) - (right.log_id ?? 0))) {
+              applyRealtimeEnvelopeRef.current(envelope);
+            }
+          }
+
           if (mode !== "append") {
             if (
               pendingRealtimeActivitiesRef.current.length === 0 &&
@@ -549,9 +591,19 @@ export default function TokenDetailPage() {
               setPendingActivityRefresh(false);
             }
           }
+        } else if (mode === "reset") {
+          activityBootstrapPendingRef.current = false;
         }
       } catch (e) {
         console.error("Failed to fetch token activity:", e);
+        if (mode === "reset") {
+          activityBootstrapPendingRef.current = false;
+          const buffered = bufferedBootstrapEnvelopesRef.current;
+          bufferedBootstrapEnvelopesRef.current = [];
+          for (const envelope of buffered) {
+            applyRealtimeEnvelopeRef.current(envelope);
+          }
+        }
       } finally {
         if (isAppend) {
           isActivityLoadingMoreRef.current = false;
@@ -562,7 +614,7 @@ export default function TokenDetailPage() {
         }
       }
     },
-    [address],
+    [address, setTopicCursor],
   );
 
   const flushPendingRealtimeActivities = useCallback(() => {
@@ -643,25 +695,25 @@ export default function TokenDetailPage() {
       return;
     }
 
-    const isReconnect = hasConnectedOnceRef.current && !wasConnectedRef.current;
     wasConnectedRef.current = true;
 
     if (!hasConnectedOnceRef.current) {
       hasConnectedOnceRef.current = true;
-      return;
     }
-
-    if (isReconnect) {
-      queueMicrotask(() => {
-        void refreshFromApi();
-      });
-    }
-  }, [isConnected, refreshFromApi]);
+  }, [isConnected]);
 
   const applyRealtimeEnvelope = useCallback(
     (envelope: TokenEventEnvelope) => {
       if (!eventBelongsToMint(envelope, address)) {
         return;
+      }
+
+      if (typeof envelope.log_id === "number" && envelope.log_id > 0) {
+        activitySnapshotLogIdRef.current = Math.max(
+          activitySnapshotLogIdRef.current,
+          envelope.log_id,
+        );
+        setTopicCursor(`token:${address}`, envelope.log_id);
       }
 
       const detailSnapshot = tokenDetailRef.current;
@@ -721,8 +773,12 @@ export default function TokenDetailPage() {
         };
       });
     },
-    [address, enqueueRealtimeActivity, scheduleRefresh, setCandles],
+    [address, enqueueRealtimeActivity, scheduleRefresh, setCandles, setTopicCursor],
   );
+
+  useEffect(() => {
+    applyRealtimeEnvelopeRef.current = applyRealtimeEnvelope;
+  }, [applyRealtimeEnvelope]);
 
   useEffect(() => {
     const removeListener = addMessageListener((raw) => {
@@ -740,6 +796,13 @@ export default function TokenDetailPage() {
 
       const envelope = msg as unknown as TokenEventEnvelope;
       if (eventBelongsToMint(envelope, address)) {
+        if (activityBootstrapPendingRef.current) {
+          bufferedBootstrapEnvelopesRef.current = mergeBufferedEnvelopes(
+            bufferedBootstrapEnvelopesRef.current,
+            [envelope],
+          );
+          return;
+        }
         applyRealtimeEnvelope(envelope);
       }
     });

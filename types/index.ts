@@ -150,6 +150,7 @@ export interface TokenEventRefs {
 }
 
 export interface TokenEventEnvelope {
+  log_id?: number;
   schema_version?: number;
   event_id: string;
   chain?: string;
@@ -205,6 +206,7 @@ export interface TokenActivityPage {
   mint: string;
   count: number;
   has_more: boolean;
+  snapshot_log_id?: number;
   next_cursor?: TokenActivityCursor;
   activity: TokenActivity[];
 }
