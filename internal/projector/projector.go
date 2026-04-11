@@ -37,6 +37,13 @@ func New(readModel readModelWriter) *Projector {
 	return &Projector{store: readModel}
 }
 
+func (p *Projector) WithStore(readModel readModelWriter) *Projector {
+	if p == nil {
+		return New(readModel)
+	}
+	return &Projector{store: readModel}
+}
+
 func (p *Projector) Project(ctx context.Context, event *events.Envelope, payload any) error {
 	if p.store == nil {
 		return nil

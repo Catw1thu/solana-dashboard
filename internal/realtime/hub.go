@@ -95,6 +95,28 @@ func (h *Hub) Unsubscribe(sub *Subscription) {
 	sub.close()
 }
 
+func (h *Hub) SubscriberCount(topic string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return len(h.subscribers[topic])
+}
+
+func (h *Hub) HasSubscribers(topic string) bool {
+	return h.SubscriberCount(topic) > 0
+}
+
+func (h *Hub) TotalSubscribers() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	total := 0
+	for _, subs := range h.subscribers {
+		total += len(subs)
+	}
+	return total
+}
+
 // Publish sends an event to all subscribers of the specified topic.
 func (h *Hub) Publish(topic string, event events.Envelope) {
 	h.mu.RLock()

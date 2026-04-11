@@ -39,6 +39,17 @@ func (r *replayLogReader) SaveProjectionCheckpoint(ctx context.Context, projecto
 	return nil
 }
 
+func (r *replayLogReader) LoadLatestServiceEventLogID(ctx context.Context) (int64, error) {
+	if len(r.entries) == 0 {
+		return 0, nil
+	}
+	return r.entries[len(r.entries)-1].LogID, nil
+}
+
+func (r *replayLogReader) RunInTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 type replayReadModelWriter struct {
 	tokens     []store.TokenRecord
 	metadata   []store.TokenMetadataRecord

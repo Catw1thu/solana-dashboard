@@ -12,77 +12,135 @@ import (
 )
 
 type mockTradeMetricsStore struct {
-	metrics map[string][]store.TradeMetricPoint
+	tradeMetrics  map[string][]store.TradeMetricPoint
+	recentMetrics map[string][]store.TradeMetricPoint
+	longMetrics   map[string]store.LongWindowMetricsRecord
+	latestSeeds   map[string]store.LatestTradeSeedRecord
+	candidates    []string
+	upserts       []store.TokenMetricsCurrentRecord
 }
 
 func (m *mockTradeMetricsStore) ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]store.TradeMetricPoint, error) {
-	return m.metrics[mint], nil
+	return m.tradeMetrics[mint], nil
 }
 
-func TestSweepExpiry(t *testing.T) {
-	hub := realtime.NewHub()
+func (m *mockTradeMetricsStore) ListRecentTradeMetricsByMint(ctx context.Context, mint string, sinceUnix int64) ([]store.TradeMetricPoint, error) {
+	return m.recentMetrics[mint], nil
+}
+
+func (m *mockTradeMetricsStore) ListLongWindowMetricsByMints(ctx context.Context, mints []string, nowTs int64) (map[string]store.LongWindowMetricsRecord, error) {
+	result := make(map[string]store.LongWindowMetricsRecord, len(mints))
+	for _, mint := range mints {
+		if record, ok := m.longMetrics[mint]; ok {
+			result[mint] = record
+		}
+	}
+	return result, nil
+}
+
+func (m *mockTradeMetricsStore) ListMetricBackfillCandidates(ctx context.Context, limit int) ([]string, error) {
+	if len(m.candidates) <= limit {
+		return m.candidates, nil
+	}
+	return m.candidates[:limit], nil
+}
+
+func (m *mockTradeMetricsStore) ListLatestTradeSeedsByMints(ctx context.Context, mints []string) (map[string]store.LatestTradeSeedRecord, error) {
+	result := make(map[string]store.LatestTradeSeedRecord, len(mints))
+	for _, mint := range mints {
+		if record, ok := m.latestSeeds[mint]; ok {
+			result[mint] = record
+		}
+	}
+	return result, nil
+}
+
+func (m *mockTradeMetricsStore) UpsertTokenMetricsCurrent(ctx context.Context, records []store.TokenMetricsCurrentRecord) error {
+	m.upserts = append(m.upserts, records...)
+	return nil
+}
+
+func (m *mockTradeMetricsStore) LoadTokenMetricsCurrentByMint(ctx context.Context, mint string) (*store.TokenMetricsCurrentRecord, error) {
+	for _, record := range m.upserts {
+		if record.Mint == mint {
+			copy := record
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func TestBuildPayloadFromTradeMetricsFallsBackToEarliestTradeForYoungToken(t *testing.T) {
+	nowTs := int64(1_700_300_000)
+	payload, ok := BuildPayloadFromTradeMetrics("mint_1", []store.TradeMetricPoint{
+		{
+			EventUnixTS: nowTs - 2400,
+			Side:        "buy",
+			Price:       0.0000003,
+			Volume:      0.1,
+		},
+		{
+			EventUnixTS: nowTs - 10,
+			Side:        "buy",
+			Price:       0.00001,
+			Volume:      0.2,
+		},
+	}, nowTs)
+	if !ok {
+		t.Fatal("expected payload to be built")
+	}
+	if payload.P1h != 0.0000003 || payload.P4h != 0.0000003 || payload.P24h != 0.0000003 {
+		t.Fatalf("expected seeded anchors from DB metrics, got p1h=%f p4h=%f p24h=%f", payload.P1h, payload.P4h, payload.P24h)
+	}
+}
+
+func TestEnsureWindowSeededLoadsRecentTrades(t *testing.T) {
+	mint := "mint_1"
+	nowTs := int64(1_700_400_000)
+
+	store := &mockTradeMetricsStore{
+		recentMetrics: map[string][]store.TradeMetricPoint{
+			mint: {
+				{
+					EventUnixTS: nowTs - 120,
+					Side:        "buy",
+					Price:       1.2,
+					Volume:      3,
+				},
+				{
+					EventUnixTS: nowTs - 15,
+					Side:        "sell",
+					Price:       1.3,
+					Volume:      1,
+				},
+			},
+		},
+	}
+
 	b := &Broadcaster{
-		nc:      nil,
-		hub:     hub,
-		windows: make(map[string]*TokenSlidingWindow),
+		hub:          realtime.NewHub(),
+		metricsStore: store,
+		windows:      make(map[string]*TokenWindowState),
 	}
 
-	mint := "Token111111111111111111111111111111111111"
+	b.ensureWindowSeeded(mint, nowTs)
+	window := b.getWindow(mint)
+	window.mu.Lock()
+	defer window.mu.Unlock()
 
-	// Create mock trade exactly 4 minutes and 58 seconds ago
-	nowTs := time.Now().Unix()
-	pastTs := nowTs - 298
-
-	p := events.PumpfunTradePayload{
-		Mint:        mint,
-		SolAmount:   "1000000000",
-		TokenAmount: "1000000000",
-		Side:        "buy",
+	if !window.Seeded {
+		t.Fatal("expected window to be marked seeded")
 	}
-	bytes, _ := json.Marshal(p)
-
-	env := events.Envelope{
-		Protocol:    "pumpfun",
-		EventType:   "trade",
-		Payload:     json.RawMessage(bytes),
-		EventUnixTS: pastTs,
+	if window.LastPrice != 1.3 {
+		t.Fatalf("expected last seeded price 1.3, got %f", window.LastPrice)
 	}
-
-	b.handleTrade(&env)
-
-	w := b.getWindow(mint)
-	if len(w.ShortTrades) != 1 {
-		t.Fatalf("expected 1 short trade, got %d", len(w.ShortTrades))
-	}
-
-	// Verify sweeping immediately does not remove it
-	b.Sweep()
-	w = b.getWindow(mint)
-	if len(w.ShortTrades) != 1 {
-		t.Fatalf("expected 1 short trade after immediate sweep, got %d", len(w.ShortTrades))
-	}
-
-	// Wait 3 seconds so it ages out to strictly greater than 5 minutes old
-	time.Sleep(3 * time.Second)
-
-	// Sweep again
-	b.Sweep()
-	w = b.getWindow(mint)
-	if len(w.ShortTrades) != 1 {
-		t.Fatalf("expected 1 retained anchor trade after 5m expiry, got %d", len(w.ShortTrades))
-	}
-	if w.ShortTrades[0].Timestamp != pastTs {
-		t.Fatalf("expected retained anchor trade timestamp %d, got %d", pastTs, w.ShortTrades[0].Timestamp)
-	}
-
-	t.Log("Successfully verified 5m short trades retain one pre-window anchor trade")
 }
 
 func TestHandleTradeAcceptsPumpAmmSwap(t *testing.T) {
 	hub := realtime.NewHub()
 	b := &Broadcaster{
 		hub:     hub,
-		windows: make(map[string]*TokenSlidingWindow),
+		windows: make(map[string]*TokenWindowState),
 	}
 
 	mint := "Token111111111111111111111111111111111111"
@@ -110,139 +168,75 @@ func TestHandleTradeAcceptsPumpAmmSwap(t *testing.T) {
 	b.handleTrade(&env)
 
 	window := b.getWindow(mint)
-	if len(window.ShortTrades) != 1 {
-		t.Fatalf("expected 1 short trade, got %d", len(window.ShortTrades))
-	}
-	if !window.ShortTrades[0].IsBuy {
-		t.Fatalf("expected trade to be normalized as buy for tracked token")
-	}
-	if window.ShortTrades[0].Price <= 0 {
-		t.Fatalf("expected positive price, got %f", window.ShortTrades[0].Price)
+	window.mu.Lock()
+	defer window.mu.Unlock()
+	if window.LastPrice <= 0 {
+		t.Fatalf("expected positive price, got %f", window.LastPrice)
 	}
 }
 
-func TestRunPublishesTokenStatsFromGlobalHub(t *testing.T) {
+func TestSweepPublishesOnlySubscribedTokenStats(t *testing.T) {
 	hub := realtime.NewHub()
+	mintSubscribed := "mint_sub"
+	mintUnsubscribed := "mint_unsub"
+	nowTs := time.Now().Unix()
+
+	store := &mockTradeMetricsStore{
+		longMetrics: map[string]store.LongWindowMetricsRecord{
+			mintSubscribed:   {Mint: mintSubscribed},
+			mintUnsubscribed: {Mint: mintUnsubscribed},
+		},
+	}
+
 	b := &Broadcaster{
-		hub:     hub,
-		windows: make(map[string]*TokenSlidingWindow),
+		hub:          hub,
+		metricsStore: store,
+		windows:      make(map[string]*TokenWindowState),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	b.recordTrade(mintSubscribed, true, 2, 1.1, nowTs-5, 11)
+	b.recordTrade(mintUnsubscribed, true, 2, 1.2, nowTs-5, 12)
 
-	done := make(chan error, 1)
-	go func() {
-		done <- b.Run(ctx)
-	}()
+	sub := hub.Subscribe("token:"+mintSubscribed, 4)
+	defer hub.Unsubscribe(sub)
 
-	mint := "Token111111111111111111111111111111111111"
-	tokenSub := hub.Subscribe("token:"+mint, 4)
-	defer hub.Unsubscribe(tokenSub)
+	b.Sweep()
 
-	payload := events.PumpfunTradePayload{
-		Mint:        mint,
-		SolAmount:   "1000000000",
-		TokenAmount: "1000000",
-		Side:        "buy",
-	}
-	bytes, _ := json.Marshal(payload)
-	time.Sleep(10 * time.Millisecond)
-	hub.Publish("global", events.Envelope{
-		Protocol:    "pumpfun",
-		EventType:   "trade",
-		Payload:     json.RawMessage(bytes),
-		EventUnixTS: time.Now().Unix(),
-	})
-
-	timeout := time.After(2 * time.Second)
-	for {
-		select {
-		case err := <-done:
-			t.Fatalf("broadcaster exited early: %v", err)
-		case event := <-tokenSub.Events:
-			if event.EventType == "token_stat" {
-				return
-			}
-		case <-timeout:
-			t.Fatal("timed out waiting for token_stat event")
+	select {
+	case event := <-sub.Events:
+		if event.EventType != "token_stat" {
+			t.Fatalf("expected token_stat, got %s", event.EventType)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for subscribed token_stat")
+	}
+
+	if len(store.upserts) != 2 {
+		t.Fatalf("expected 2 current metric upserts, got %d", len(store.upserts))
 	}
 }
 
-func TestGeneratePayloadFallsBackToEarliestTradeForYoungToken(t *testing.T) {
-	b := &Broadcaster{
-		hub:     realtime.NewHub(),
-		windows: make(map[string]*TokenSlidingWindow),
-	}
-
-	mint := "YoungToken11111111111111111111111111111111"
-	startTs := int64(1_700_000_000)
-
-	b.recordTrade(mint, true, 0.1, 0.0000002801, startTs)
-	b.recordTrade(mint, true, 0.2, 0.0000040, startTs+600)
-
-	window := b.getWindow(mint)
-	window.mu.Lock()
-	payload := b.generatePayload(mint, window, startTs+600)
-	window.mu.Unlock()
-
-	if payload.P24h != 0.0000002801 {
-		t.Fatalf("expected earliest trade to anchor 24h change, got %f", payload.P24h)
-	}
-
-	change := ((payload.Price - payload.P24h) / payload.P24h) * 100
-	if change < 1000 {
-		t.Fatalf("expected >=1000%% gain for young token, got %.2f%%", change)
-	}
-}
-
-func TestGeneratePayloadUsesExactBucketVolumes(t *testing.T) {
-	b := &Broadcaster{
-		hub:     realtime.NewHub(),
-		windows: make(map[string]*TokenSlidingWindow),
-	}
-
-	mint := "VolumeToken111111111111111111111111111111"
-	startTs := int64(1_700_100_000)
-
-	b.recordTrade(mint, true, 12, 1.0, startTs)
-	b.recordTrade(mint, false, 3, 1.2, startTs+120)
-
-	window := b.getWindow(mint)
-	window.mu.Lock()
-	payload := b.generatePayload(mint, window, startTs+180)
-	window.mu.Unlock()
-
-	if payload.BV1h != 12 {
-		t.Fatalf("expected exact 1h buy volume 12, got %f", payload.BV1h)
-	}
-	if payload.SV1h != 3 {
-		t.Fatalf("expected exact 1h sell volume 3, got %f", payload.SV1h)
-	}
-	if payload.BV4h != 12 || payload.SV4h != 3 {
-		t.Fatalf("expected exact 4h buy/sell volume 12/3, got %f/%f", payload.BV4h, payload.SV4h)
-	}
-}
-
-func TestEnsureWindowSeededRestoresLongWindowAnchorFromDatabase(t *testing.T) {
-	nowTs := int64(1_700_200_000)
-	mint := "RestartedToken11111111111111111111111111111"
-
-	metricsStore := &mockTradeMetricsStore{
-		metrics: map[string][]store.TradeMetricPoint{
-			mint: {
+func TestBackfillCurrentMetricsSeedsMissingRows(t *testing.T) {
+	nowTs := time.Now().Unix()
+	store := &mockTradeMetricsStore{
+		candidates: []string{"mint_1"},
+		longMetrics: map[string]store.LongWindowMetricsRecord{
+			"mint_1": {Mint: "mint_1"},
+		},
+		latestSeeds: map[string]store.LatestTradeSeedRecord{
+			"mint_1": {
+				Mint:            "mint_1",
+				LatestPrice:     floatPtr(1.25),
+				LatestEventUnix: int64Ptr(nowTs - 10),
+			},
+		},
+		recentMetrics: map[string][]store.TradeMetricPoint{
+			"mint_1": {
 				{
-					EventUnixTS: nowTs - 2400,
+					EventUnixTS: nowTs - 20,
 					Side:        "buy",
-					Price:       0.0000003,
-					Volume:      0.1,
-				},
-				{
-					EventUnixTS: nowTs - 30,
-					Side:        "buy",
-					Price:       0.00001,
-					Volume:      0.2,
+					Price:       1.2,
+					Volume:      2,
 				},
 			},
 		},
@@ -250,30 +244,29 @@ func TestEnsureWindowSeededRestoresLongWindowAnchorFromDatabase(t *testing.T) {
 
 	b := &Broadcaster{
 		hub:          realtime.NewHub(),
-		metricsStore: metricsStore,
-		windows:      make(map[string]*TokenSlidingWindow),
+		metricsStore: store,
+		windows:      make(map[string]*TokenWindowState),
 	}
 
-	b.ensureWindowSeeded(mint, nowTs)
-
-	window := b.getWindow(mint)
-	window.mu.Lock()
-	payload := b.generatePayload(mint, window, nowTs)
-	window.mu.Unlock()
-
-	if payload.P1h != 0.0000003 {
-		t.Fatalf("expected seeded 1h anchor 0.0000003, got %f", payload.P1h)
+	if err := b.BackfillCurrentMetrics(context.Background(), 10); err != nil {
+		t.Fatalf("BackfillCurrentMetrics returned error: %v", err)
 	}
-	if payload.P4h != 0.0000003 || payload.P24h != 0.0000003 {
-		t.Fatalf("expected seeded 4h/24h anchors 0.0000003, got %f/%f", payload.P4h, payload.P24h)
+	if len(store.upserts) != 1 {
+		t.Fatalf("expected 1 upserted current metrics row, got %d", len(store.upserts))
 	}
-
-	change := ((payload.Price - payload.P1h) / payload.P1h) * 100
-	if change < 3000 {
-		t.Fatalf("expected >=3000%% gain after DB seed restore, got %.2f%%", change)
+	if store.upserts[0].Mint != "mint_1" {
+		t.Fatalf("expected mint_1 backfill record, got %s", store.upserts[0].Mint)
 	}
 }
 
 func stringPtr(v string) *string {
+	return &v
+}
+
+func floatPtr(v float64) *float64 {
+	return &v
+}
+
+func int64Ptr(v int64) *int64 {
 	return &v
 }

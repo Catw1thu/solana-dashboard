@@ -12,6 +12,7 @@ import (
 	"solana-dashboard-go/internal/ingest"
 	"solana-dashboard-go/internal/jetstream"
 	"solana-dashboard-go/internal/metadatafetcher"
+	"solana-dashboard-go/internal/observability"
 	"solana-dashboard-go/internal/projector"
 	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
@@ -63,6 +64,9 @@ func main() {
 
 	statsBroadcaster := broadcaster.NewBroadcaster(cfg.NATSURL, hub, readModelStore)
 	go func() {
+		if err := statsBroadcaster.BackfillCurrentMetrics(ctx, 250); err != nil {
+			log.Printf("failed to backfill token metrics current: %v", err)
+		}
 		if err := statsBroadcaster.Run(ctx); err != nil {
 			log.Printf("failed to run stats broadcaster: %v", err)
 		}
@@ -85,15 +89,16 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", handler.Healthz)
-	mux.HandleFunc("/internal/events", handler.IngestEvent)
-	mux.HandleFunc("GET /tokens", handler.ListTokens)
-	mux.HandleFunc("GET /search/tokens", handler.SearchTokens)
-	mux.HandleFunc("GET /tokens/{mint}", handler.GetTokenDetail)
-	mux.HandleFunc("GET /tokens/{mint}/events", handler.ListTokenEvents)
-	mux.HandleFunc("GET /tokens/{mint}/candles", handler.ListTokenCandles)
-	mux.HandleFunc("GET /tokens/{mint}/activity", handler.ListTokenActivity)
-	mux.HandleFunc("GET /tokens/{mint}/trades", handler.ListTokenTrades)
+	mux.Handle("/metrics", observability.Default())
+	mux.HandleFunc("/healthz", observability.InstrumentHTTP("healthz", handler.Healthz))
+	mux.HandleFunc("/internal/events", observability.InstrumentHTTP("ingest_event", handler.IngestEvent))
+	mux.HandleFunc("GET /tokens", observability.InstrumentHTTP("list_tokens", handler.ListTokens))
+	mux.HandleFunc("GET /search/tokens", observability.InstrumentHTTP("search_tokens", handler.SearchTokens))
+	mux.HandleFunc("GET /tokens/{mint}", observability.InstrumentHTTP("get_token_detail", handler.GetTokenDetail))
+	mux.HandleFunc("GET /tokens/{mint}/events", observability.InstrumentHTTP("list_token_events", handler.ListTokenEvents))
+	mux.HandleFunc("GET /tokens/{mint}/candles", observability.InstrumentHTTP("list_token_candles", handler.ListTokenCandles))
+	mux.HandleFunc("GET /tokens/{mint}/activity", observability.InstrumentHTTP("list_token_activity", handler.ListTokenActivity))
+	mux.HandleFunc("GET /tokens/{mint}/trades", observability.InstrumentHTTP("list_token_trades", handler.ListTokenTrades))
 	mux.HandleFunc("/ws", handler.ServeWS)
 
 	server := &http.Server{

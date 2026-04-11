@@ -210,7 +210,7 @@ limit $1
 `
 
 const listTokenBoardRowsSQL = `
-with candidates as (
+with enriched as (
     select
         t.mint,
         m.name,
@@ -234,94 +234,57 @@ with candidates as (
         am.quote_mint as active_quote_mint,
         am.base_mint_decimals as active_base_mint_decimals,
         am.quote_mint_decimals as active_quote_mint_decimals,
-        coalesce(window_stats.txns_window, 0)::bigint as txns_window,
-        coalesce(window_stats.buys_window, 0)::bigint as buys_window,
-        coalesce(window_stats.sells_window, 0)::bigint as sells_window,
-        coalesce(window_stats.volume_window, 0)::double precision as volume_window
+        tm.latest_price,
+        extract(epoch from tm.latest_trade_at)::bigint as latest_event_unix_ts,
+        case
+            when $2 = '1m' then tm.anchor_price_1m
+            when $2 = '5m' then tm.anchor_price_5m
+            when $2 = '1h' then tm.anchor_price_1h
+            when $2 = '4h' then tm.anchor_price_4h
+            else tm.anchor_price_24h
+        end as anchor_price,
+        case
+            when $2 = '1m' then tm.volume_1m
+            when $2 = '5m' then tm.volume_5m
+            when $2 = '1h' then tm.volume_1h
+            when $2 = '4h' then tm.volume_4h
+            else tm.volume_24h
+        end as volume_window,
+        case
+            when $2 = '1m' then tm.txns_1m
+            when $2 = '5m' then tm.txns_5m
+            when $2 = '1h' then tm.txns_1h
+            when $2 = '4h' then tm.txns_4h
+            else tm.txns_24h
+        end as txns_window,
+        case
+            when $2 = '1m' then tm.buys_1m
+            when $2 = '5m' then tm.buys_5m
+            when $2 = '1h' then tm.buys_1h
+            when $2 = '4h' then tm.buys_4h
+            else tm.buys_24h
+        end as buys_window,
+        case
+            when $2 = '1m' then tm.sells_1m
+            when $2 = '5m' then tm.sells_5m
+            when $2 = '1h' then tm.sells_1h
+            when $2 = '4h' then tm.sells_4h
+            else tm.sells_24h
+        end as sells_window,
+        case
+            when m.total_supply_raw is not null and tm.latest_price is not null then (
+                scale_amount_numeric(m.total_supply_raw, m.decimals)::double precision
+                * tm.latest_price
+            )
+            else null
+        end as market_cap_quote
     from tokens t
     left join token_metadata_current m
         on m.mint = t.mint
     left join token_markets am
         on am.market_id = t.active_market_id
-    left join lateral (
-        select
-            count(*)::bigint as txns_window,
-            count(*) filter (where tt.side = 'buy')::bigint as buys_window,
-            count(*) filter (where tt.side = 'sell')::bigint as sells_window,
-            coalesce(sum(
-                scale_amount_numeric(
-                    tt.quote_amount_raw,
-                    resolved_quote_decimals(tt.quote_mint, m.quote_mint, m.quote_decimals)
-                )
-            ), 0)::double precision as volume_window
-        from token_trade_events tt
-        where tt.mint = t.mint
-          and tt.event_time > now() - $2::interval
-    ) window_stats on true
-    order by
-        case when $3 = 'hot' then coalesce(window_stats.txns_window, 0) end desc nulls last,
-        case when $3 = 'hot' then coalesce(window_stats.volume_window, 0) end desc nulls last,
-        case when $3 = 'hot' then greatest(t.first_seen_at, coalesce(t.migrated_at, t.first_seen_at)) end desc nulls last,
-        case when $3 = 'new' then greatest(t.first_seen_at, coalesce(t.migrated_at, t.first_seen_at)) end desc nulls last,
-        t.first_seen_at desc
-    limit $1
-),
-enriched as (
-    select
-        c.*,
-        latest.latest_price,
-        latest.latest_event_unix_ts,
-        coalesce(anchor_before.anchor_price, anchor_inside.anchor_price) as anchor_price,
-        case
-            when c.total_supply_raw is not null and latest.latest_price is not null then (
-                scale_amount_numeric(c.total_supply_raw, c.decimals)::double precision
-                * latest.latest_price
-            )
-            else null
-        end as market_cap_quote
-    from candidates c
-    left join lateral (
-        select
-            extract(epoch from tt.event_time)::bigint as latest_event_unix_ts,
-            trade_price_quote(
-                tt.quote_amount_raw,
-                tt.token_amount_raw,
-                c.decimals,
-                resolved_quote_decimals(tt.quote_mint, c.quote_mint, c.quote_decimals)
-            )::double precision as latest_price
-        from token_trade_events tt
-        where tt.mint = c.mint
-        order by tt.event_time desc, tt.slot desc, tt.insert_seq desc
-        limit 1
-    ) latest on true
-    left join lateral (
-        select
-            trade_price_quote(
-                tt.quote_amount_raw,
-                tt.token_amount_raw,
-                c.decimals,
-                resolved_quote_decimals(tt.quote_mint, c.quote_mint, c.quote_decimals)
-            )::double precision as anchor_price
-        from token_trade_events tt
-        where tt.mint = c.mint
-          and tt.event_time <= now() - $2::interval
-        order by tt.event_time desc, tt.slot desc, tt.insert_seq desc
-        limit 1
-    ) anchor_before on true
-    left join lateral (
-        select
-            trade_price_quote(
-                tt.quote_amount_raw,
-                tt.token_amount_raw,
-                c.decimals,
-                resolved_quote_decimals(tt.quote_mint, c.quote_mint, c.quote_decimals)
-            )::double precision as anchor_price
-        from token_trade_events tt
-        where tt.mint = c.mint
-          and tt.event_time > now() - $2::interval
-        order by tt.event_time asc, tt.slot asc, tt.insert_seq asc
-        limit 1
-    ) anchor_inside on true
+    left join token_metrics_current tm
+        on tm.mint = t.mint
 )
 select
     e.mint,
@@ -347,10 +310,10 @@ select
         when e.latest_price is null or e.anchor_price is null or e.anchor_price = 0 then null
         else ((e.latest_price - e.anchor_price) / e.anchor_price) * 100
     end as price_change,
-    e.volume_window,
-    e.txns_window,
-    e.buys_window,
-    e.sells_window,
+    coalesce(e.volume_window, 0)::double precision as volume_window,
+    coalesce(e.txns_window, 0)::bigint as txns_window,
+    coalesce(e.buys_window, 0)::bigint as buys_window,
+    coalesce(e.sells_window, 0)::bigint as sells_window,
     reserve_state.liquidity_quote,
     e.market_cap_quote
 from enriched e
@@ -457,10 +420,11 @@ left join lateral (
     limit 1
 ) reserve_state on true
 order by
-    case when $3 = 'hot' then e.txns_window end desc nulls last,
-    case when $3 = 'hot' then e.volume_window end desc nulls last,
+    case when $3 = 'hot' then coalesce(e.txns_window, 0) end desc nulls last,
+    case when $3 = 'hot' then coalesce(e.volume_window, 0) end desc nulls last,
     case when $3 = 'new' then e.active_since_unix end desc nulls last,
     e.first_seen_at_unix desc
+limit $1
 `
 
 const findTokenSnapshotByMintSQL = `
@@ -498,23 +462,12 @@ select
     m.name,
     m.symbol,
     m.image_uri,
-    latest.latest_price
+    tm.latest_price
 from tokens t
 left join token_metadata_current m
     on m.mint = t.mint
-left join lateral (
-    select
-        trade_price_quote(
-            tt.quote_amount_raw,
-            tt.token_amount_raw,
-            m.decimals,
-            resolved_quote_decimals(tt.quote_mint, m.quote_mint, m.quote_decimals)
-        )::double precision as latest_price
-    from token_trade_events tt
-    where tt.mint = t.mint
-    order by tt.event_time desc, tt.slot desc, tt.insert_seq desc
-    limit 1
-) latest on true
+left join token_metrics_current tm
+    on tm.mint = t.mint
 where (
     t.mint ilike $1
     or coalesce(m.name, '') ilike $1
@@ -658,7 +611,76 @@ order by event_time desc, slot desc, insert_seq desc
 limit 1
 `
 
-const loadTokenTradeSummarySQL = `
+const loadTokenTradeSummaryCurrentSQL = `
+select
+    m.quote_mint,
+    tm.latest_price,
+    extract(epoch from tm.latest_trade_at)::bigint as latest_event_unix_ts,
+    tm.anchor_price_5m,
+    tm.anchor_price_1h,
+    tm.anchor_price_4h,
+    tm.anchor_price_24h,
+    tm.txns_24h,
+    tm.buys_24h,
+    tm.sells_24h,
+    tm.volume_24h,
+    tm.buy_volume_24h,
+    tm.sell_volume_24h,
+    0::bigint as makers_24h,
+    0::bigint as buyers_24h,
+    0::bigint as sellers_24h
+from token_metrics_current tm
+left join token_metadata_current m
+    on m.mint = tm.mint
+where tm.mint = $1
+`
+
+const loadTokenMetricsCurrentByMintSQL = `
+select
+    mint,
+    latest_price,
+    extract(epoch from latest_trade_at)::bigint as latest_event_unix_ts,
+    anchor_price_1m,
+    anchor_price_5m,
+    anchor_price_1h,
+    anchor_price_4h,
+    anchor_price_24h,
+    txns_1m,
+    txns_5m,
+    txns_1h,
+    txns_4h,
+    txns_24h,
+    buys_1m,
+    buys_5m,
+    buys_1h,
+    buys_4h,
+    buys_24h,
+    sells_1m,
+    sells_5m,
+    sells_1h,
+    sells_4h,
+    sells_24h,
+    volume_1m,
+    volume_5m,
+    volume_1h,
+    volume_4h,
+    volume_24h,
+    buy_volume_1m,
+    buy_volume_5m,
+    buy_volume_1h,
+    buy_volume_4h,
+    buy_volume_24h,
+    sell_volume_1m,
+    sell_volume_5m,
+    sell_volume_1h,
+    sell_volume_4h,
+    sell_volume_24h,
+    source_log_id
+from token_metrics_current
+where mint = $1
+`
+
+const loadTokenTradeSummaryFallbackSQL = `
 with meta as (
     select
         decimals,
@@ -954,6 +976,265 @@ from (
 order by event_unix_ts asc, slot asc, insert_seq asc
 `
 
+const listRecentTradeMetricsByMintSQL = `
+with meta as (
+    select
+        decimals,
+        quote_mint as metadata_quote_mint,
+        quote_decimals as metadata_quote_decimals
+    from token_metadata_current
+    where mint = $1
+)
+select
+    extract(epoch from t.event_time)::bigint as event_unix_ts,
+    t.slot::bigint as slot,
+    t.insert_seq::bigint as insert_seq,
+    t.side,
+    trade_price_quote(
+        t.quote_amount_raw,
+        t.token_amount_raw,
+        m.decimals,
+        resolved_quote_decimals(t.quote_mint, m.metadata_quote_mint, m.metadata_quote_decimals)
+    )::double precision as price,
+    scale_amount_numeric(
+        t.quote_amount_raw,
+        resolved_quote_decimals(t.quote_mint, m.metadata_quote_mint, m.metadata_quote_decimals)
+    )::double precision as volume_quote
+from token_trade_events t
+left join meta m on true
+where t.mint = $1
+  and t.event_time >= to_timestamp($2)
+order by t.event_time asc, t.slot asc, t.insert_seq asc
+`
+
+const listLongWindowMetricsByMintsSQL = `
+with requested as (
+    select unnest($1::text[]) as mint
+),
+meta as (
+    select
+        r.mint,
+        m.decimals,
+        m.quote_mint as metadata_quote_mint,
+        m.quote_decimals as metadata_quote_decimals
+    from requested r
+    left join token_metadata_current m
+        on m.mint = r.mint
+),
+minute_metrics as (
+    select
+        tm.mint,
+        tm.bucket,
+        normalize_raw_trade_price(
+            tm.open_raw_price,
+            meta.decimals,
+            resolved_quote_decimals(tm.quote_mint_sample, meta.metadata_quote_mint, meta.metadata_quote_decimals)
+        )::double precision as open_price,
+        tm.txns,
+        tm.buys,
+        tm.sells,
+        scale_amount_numeric(
+            tm.volume_quote_raw,
+            resolved_quote_decimals(tm.quote_mint_sample, meta.metadata_quote_mint, meta.metadata_quote_decimals)
+        )::double precision as volume,
+        scale_amount_numeric(
+            tm.buy_volume_quote_raw,
+            resolved_quote_decimals(tm.quote_mint_sample, meta.metadata_quote_mint, meta.metadata_quote_decimals)
+        )::double precision as buy_volume,
+        scale_amount_numeric(
+            tm.sell_volume_quote_raw,
+            resolved_quote_decimals(tm.quote_mint_sample, meta.metadata_quote_mint, meta.metadata_quote_decimals)
+        )::double precision as sell_volume
+    from token_trade_metrics_1m tm
+    join meta
+        on meta.mint = tm.mint
+    where tm.mint = any($1)
+      and tm.bucket >= to_timestamp($2) - interval '24 hours'
+      and tm.bucket < to_timestamp($2) - interval '5 minutes'
+)
+select
+    r.mint,
+    first(mm.open_price, mm.bucket) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour') as anchor_price_1h,
+    first(mm.open_price, mm.bucket) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours') as anchor_price_4h,
+    first(mm.open_price, mm.bucket) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours') as anchor_price_24h,
+    coalesce(sum(mm.txns) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::bigint as txns_1h,
+    coalesce(sum(mm.txns) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::bigint as txns_4h,
+    coalesce(sum(mm.txns) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::bigint as txns_24h,
+    coalesce(sum(mm.buys) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::bigint as buys_1h,
+    coalesce(sum(mm.buys) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::bigint as buys_4h,
+    coalesce(sum(mm.buys) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::bigint as buys_24h,
+    coalesce(sum(mm.sells) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::bigint as sells_1h,
+    coalesce(sum(mm.sells) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::bigint as sells_4h,
+    coalesce(sum(mm.sells) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::bigint as sells_24h,
+    coalesce(sum(mm.volume) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::double precision as volume_1h,
+    coalesce(sum(mm.volume) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::double precision as volume_4h,
+    coalesce(sum(mm.volume) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::double precision as volume_24h,
+    coalesce(sum(mm.buy_volume) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::double precision as buy_volume_1h,
+    coalesce(sum(mm.buy_volume) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::double precision as buy_volume_4h,
+    coalesce(sum(mm.buy_volume) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::double precision as buy_volume_24h,
+    coalesce(sum(mm.sell_volume) filter (where mm.bucket >= to_timestamp($2) - interval '1 hour'), 0)::double precision as sell_volume_1h,
+    coalesce(sum(mm.sell_volume) filter (where mm.bucket >= to_timestamp($2) - interval '4 hours'), 0)::double precision as sell_volume_4h,
+    coalesce(sum(mm.sell_volume) filter (where mm.bucket >= to_timestamp($2) - interval '24 hours'), 0)::double precision as sell_volume_24h
+from requested r
+left join minute_metrics mm
+    on mm.mint = r.mint
+group by r.mint
+`
+
+const upsertTokenMetricsCurrentSQL = `
+insert into token_metrics_current (
+    mint,
+    latest_price,
+    latest_trade_at,
+    anchor_price_1m,
+    anchor_price_5m,
+    anchor_price_1h,
+    anchor_price_4h,
+    anchor_price_24h,
+    txns_1m,
+    txns_5m,
+    txns_1h,
+    txns_4h,
+    txns_24h,
+    buys_1m,
+    buys_5m,
+    buys_1h,
+    buys_4h,
+    buys_24h,
+    sells_1m,
+    sells_5m,
+    sells_1h,
+    sells_4h,
+    sells_24h,
+    volume_1m,
+    volume_5m,
+    volume_1h,
+    volume_4h,
+    volume_24h,
+    buy_volume_1m,
+    buy_volume_5m,
+    buy_volume_1h,
+    buy_volume_4h,
+    buy_volume_24h,
+    sell_volume_1m,
+    sell_volume_5m,
+    sell_volume_1h,
+    sell_volume_4h,
+    sell_volume_24h,
+    source_log_id,
+    updated_at
+) values (
+    $1,
+    $2,
+    to_timestamp($3),
+    $4, $5, $6, $7, $8,
+    $9, $10, $11, $12, $13,
+    $14, $15, $16, $17, $18,
+    $19, $20, $21, $22, $23,
+    $24, $25, $26, $27, $28,
+    $29, $30, $31, $32, $33,
+    $34, $35, $36, $37, $38,
+    $39,
+    now()
+)
+on conflict (mint) do update set
+    latest_price = excluded.latest_price,
+    latest_trade_at = excluded.latest_trade_at,
+    anchor_price_1m = excluded.anchor_price_1m,
+    anchor_price_5m = excluded.anchor_price_5m,
+    anchor_price_1h = excluded.anchor_price_1h,
+    anchor_price_4h = excluded.anchor_price_4h,
+    anchor_price_24h = excluded.anchor_price_24h,
+    txns_1m = excluded.txns_1m,
+    txns_5m = excluded.txns_5m,
+    txns_1h = excluded.txns_1h,
+    txns_4h = excluded.txns_4h,
+    txns_24h = excluded.txns_24h,
+    buys_1m = excluded.buys_1m,
+    buys_5m = excluded.buys_5m,
+    buys_1h = excluded.buys_1h,
+    buys_4h = excluded.buys_4h,
+    buys_24h = excluded.buys_24h,
+    sells_1m = excluded.sells_1m,
+    sells_5m = excluded.sells_5m,
+    sells_1h = excluded.sells_1h,
+    sells_4h = excluded.sells_4h,
+    sells_24h = excluded.sells_24h,
+    volume_1m = excluded.volume_1m,
+    volume_5m = excluded.volume_5m,
+    volume_1h = excluded.volume_1h,
+    volume_4h = excluded.volume_4h,
+    volume_24h = excluded.volume_24h,
+    buy_volume_1m = excluded.buy_volume_1m,
+    buy_volume_5m = excluded.buy_volume_5m,
+    buy_volume_1h = excluded.buy_volume_1h,
+    buy_volume_4h = excluded.buy_volume_4h,
+    buy_volume_24h = excluded.buy_volume_24h,
+    sell_volume_1m = excluded.sell_volume_1m,
+    sell_volume_5m = excluded.sell_volume_5m,
+    sell_volume_1h = excluded.sell_volume_1h,
+    sell_volume_4h = excluded.sell_volume_4h,
+    sell_volume_24h = excluded.sell_volume_24h,
+    source_log_id = excluded.source_log_id,
+	updated_at = now()
+`
+
+const listMetricBackfillCandidatesSQL = `
+with latest_trade as (
+    select
+        mint,
+        max(event_time) as latest_trade_at
+    from token_trade_events
+    group by mint
+)
+select lt.mint
+from latest_trade lt
+left join token_metrics_current tm
+    on tm.mint = lt.mint
+where tm.mint is null
+order by lt.latest_trade_at desc
+limit $1
+`
+
+const listLatestTradeSeedsByMintsSQL = `
+with requested as (
+    select unnest($1::text[]) as mint
+),
+meta as (
+    select
+        r.mint,
+        m.decimals,
+        m.quote_mint as metadata_quote_mint,
+        m.quote_decimals as metadata_quote_decimals
+    from requested r
+    left join token_metadata_current m
+        on m.mint = r.mint
+),
+latest as (
+    select distinct on (t.mint)
+        t.mint,
+        extract(epoch from t.event_time)::bigint as latest_event_unix_ts,
+        trade_price_quote(
+            t.quote_amount_raw,
+            t.token_amount_raw,
+            meta.decimals,
+            resolved_quote_decimals(t.quote_mint, meta.metadata_quote_mint, meta.metadata_quote_decimals)
+        )::double precision as latest_price
+    from token_trade_events t
+    join meta
+        on meta.mint = t.mint
+    where t.mint = any($1)
+    order by t.mint, t.event_time desc, t.slot desc, t.insert_seq desc
+)
+select
+    r.mint,
+    latest.latest_price,
+    latest.latest_event_unix_ts
+from requested r
+left join latest
+    on latest.mint = r.mint
+`
+
 const listTokenCandlesByMintSQLTemplate = `
 with meta as (
     select
@@ -1192,10 +1473,35 @@ type TradeSummaryRecord struct {
 	QuoteMint       string
 	LatestPrice     *float64
 	LatestEventUnix *int64
+	Price1mAgo      *float64
 	Price5mAgo      *float64
 	Price1hAgo      *float64
 	Price4hAgo      *float64
 	Price24hAgo     *float64
+	Txns1m          int64
+	Buys1m          int64
+	Sells1m         int64
+	Volume1m        float64
+	BuyVolume1m     float64
+	SellVolume1m    float64
+	Txns5m          int64
+	Buys5m          int64
+	Sells5m         int64
+	Volume5m        float64
+	BuyVolume5m     float64
+	SellVolume5m    float64
+	Txns1h          int64
+	Buys1h          int64
+	Sells1h         int64
+	Volume1h        float64
+	BuyVolume1h     float64
+	SellVolume1h    float64
+	Txns4h          int64
+	Buys4h          int64
+	Sells4h         int64
+	Volume4h        float64
+	BuyVolume4h     float64
+	SellVolume4h    float64
 	Txns24h         int64
 	Buys24h         int64
 	Sells24h        int64
@@ -1214,6 +1520,79 @@ type TradeMetricPoint struct {
 	Side        string
 	Price       float64
 	Volume      float64
+}
+
+type LongWindowMetricsRecord struct {
+	Mint           string
+	AnchorPrice1h  *float64
+	AnchorPrice4h  *float64
+	AnchorPrice24h *float64
+	Txns1h         int64
+	Txns4h         int64
+	Txns24h        int64
+	Buys1h         int64
+	Buys4h         int64
+	Buys24h        int64
+	Sells1h        int64
+	Sells4h        int64
+	Sells24h       int64
+	Volume1h       float64
+	Volume4h       float64
+	Volume24h      float64
+	BuyVolume1h    float64
+	BuyVolume4h    float64
+	BuyVolume24h   float64
+	SellVolume1h   float64
+	SellVolume4h   float64
+	SellVolume24h  float64
+}
+
+type LatestTradeSeedRecord struct {
+	Mint            string
+	LatestPrice     *float64
+	LatestEventUnix *int64
+}
+
+type TokenMetricsCurrentRecord struct {
+	Mint            string
+	LatestPrice     *float64
+	LatestEventUnix *int64
+	AnchorPrice1m   *float64
+	AnchorPrice5m   *float64
+	AnchorPrice1h   *float64
+	AnchorPrice4h   *float64
+	AnchorPrice24h  *float64
+	Txns1m          int64
+	Txns5m          int64
+	Txns1h          int64
+	Txns4h          int64
+	Txns24h         int64
+	Buys1m          int64
+	Buys5m          int64
+	Buys1h          int64
+	Buys4h          int64
+	Buys24h         int64
+	Sells1m         int64
+	Sells5m         int64
+	Sells1h         int64
+	Sells4h         int64
+	Sells24h        int64
+	Volume1m        float64
+	Volume5m        float64
+	Volume1h        float64
+	Volume4h        float64
+	Volume24h       float64
+	BuyVolume1m     float64
+	BuyVolume5m     float64
+	BuyVolume1h     float64
+	BuyVolume4h     float64
+	BuyVolume24h    float64
+	SellVolume1m    float64
+	SellVolume5m    float64
+	SellVolume1h    float64
+	SellVolume4h    float64
+	SellVolume24h   float64
+	SourceLogID     int64
 }
 
 type TokenCandleRecord struct {
@@ -1264,7 +1643,8 @@ func (s *ReadModelStore) UpsertToken(ctx context.Context, record TokenRecord) er
 		migratedAt = &value
 	}
 
-	_, err := s.db.Pool.Exec(
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(
 		ctx,
 		upsertTokenSQL,
 		record.Mint,
@@ -1286,7 +1666,8 @@ func (s *ReadModelStore) UpsertToken(ctx context.Context, record TokenRecord) er
 }
 
 func (s *ReadModelStore) UpsertTokenMetadata(ctx context.Context, record TokenMetadataRecord) error {
-	_, err := s.db.Pool.Exec(
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(
 		ctx,
 		upsertTokenMetadataSQL,
 		record.Mint,
@@ -1319,7 +1700,8 @@ func (s *ReadModelStore) UpsertTokenMarket(ctx context.Context, market TokenMark
 		endedAt = &value
 	}
 
-	_, err := s.db.Pool.Exec(
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(
 		ctx,
 		upsertTokenMarketSQL,
 		market.MarketID,
@@ -1345,7 +1727,8 @@ func (s *ReadModelStore) UpsertTokenMarket(ctx context.Context, market TokenMark
 }
 
 func (s *ReadModelStore) CloseTokenMarket(ctx context.Context, marketID string, endedAt int64) error {
-	_, err := s.db.Pool.Exec(ctx, closeTokenMarketSQL, marketID, unixToTimestampSeconds(endedAt))
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(ctx, closeTokenMarketSQL, marketID, unixToTimestampSeconds(endedAt))
 	if err != nil {
 		return fmt.Errorf("close token market: %w", err)
 	}
@@ -1354,7 +1737,8 @@ func (s *ReadModelStore) CloseTokenMarket(ctx context.Context, marketID string, 
 }
 
 func (s *ReadModelStore) InsertTradeEvent(ctx context.Context, trade TradeEventRecord) error {
-	_, err := s.db.Pool.Exec(
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(
 		ctx,
 		insertTokenTradeEventSQL,
 		unixToTimestampSeconds(trade.EventUnixTS),
@@ -1386,7 +1770,8 @@ func (s *ReadModelStore) InsertActivityEvent(ctx context.Context, activity Activ
 		details = json.RawMessage(`{}`)
 	}
 
-	_, err := s.db.Pool.Exec(
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(
 		ctx,
 		insertTokenActivityEventSQL,
 		unixToTimestampSeconds(activity.EventUnixTS),
@@ -1636,35 +2021,26 @@ func (s *ReadModelStore) ListActivityEventsPageByMint(ctx context.Context, mint 
 }
 
 func (s *ReadModelStore) LoadTradeSummaryByMint(ctx context.Context, mint string) (*TradeSummaryRecord, error) {
-	row := s.db.Pool.QueryRow(ctx, loadTokenTradeSummarySQL, mint)
+	row := s.db.Pool.QueryRow(ctx, loadTokenTradeSummaryCurrentSQL, mint)
 
-	var summary TradeSummaryRecord
-	err := row.Scan(
-		&summary.QuoteMint,
-		&summary.LatestPrice,
-		&summary.LatestEventUnix,
-		&summary.Price5mAgo,
-		&summary.Price1hAgo,
-		&summary.Price4hAgo,
-		&summary.Price24hAgo,
-		&summary.Txns24h,
-		&summary.Buys24h,
-		&summary.Sells24h,
-		&summary.Volume24h,
-		&summary.BuyVolume24h,
-		&summary.SellVolume24h,
-		&summary.Makers24h,
-		&summary.Buyers24h,
-		&summary.Sellers24h,
-	)
+	summary, err := scanTradeSummaryRow(row)
+	if err == nil {
+		return summary, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("load trade summary current by mint=%s: %w", mint, err)
+	}
+
+	row = s.db.Pool.QueryRow(ctx, loadTokenTradeSummaryFallbackSQL, mint)
+	summary, err = scanTradeSummaryRow(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("load trade summary by mint=%s: %w", mint, err)
+		return nil, fmt.Errorf("load trade summary fallback by mint=%s: %w", mint, err)
 	}
 
-	return &summary, nil
+	return summary, nil
 }
 
 func (s *ReadModelStore) ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]TradeMetricPoint, error) {
@@ -1694,6 +2070,292 @@ func (s *ReadModelStore) ListTradeMetricsForStatsByMint(ctx context.Context, min
 	}
 
 	return metrics, nil
+}
+
+func (s *ReadModelStore) ListRecentTradeMetricsByMint(ctx context.Context, mint string, sinceUnix int64) ([]TradeMetricPoint, error) {
+	rows, err := s.db.Pool.Query(ctx, listRecentTradeMetricsByMintSQL, mint, sinceUnix)
+	if err != nil {
+		return nil, fmt.Errorf("list recent trade metrics by mint=%s since=%d: %w", mint, sinceUnix, err)
+	}
+	defer rows.Close()
+
+	metrics := make([]TradeMetricPoint, 0, 128)
+	for rows.Next() {
+		var point TradeMetricPoint
+		if err := rows.Scan(
+			&point.EventUnixTS,
+			&point.Slot,
+			&point.InsertSeq,
+			&point.Side,
+			&point.Price,
+			&point.Volume,
+		); err != nil {
+			return nil, fmt.Errorf("scan recent trade metrics row: %w", err)
+		}
+		metrics = append(metrics, point)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent trade metrics rows: %w", err)
+	}
+
+	return metrics, nil
+}
+
+func (s *ReadModelStore) ListLongWindowMetricsByMints(ctx context.Context, mints []string, nowTs int64) (map[string]LongWindowMetricsRecord, error) {
+	if len(mints) == 0 {
+		return map[string]LongWindowMetricsRecord{}, nil
+	}
+
+	rows, err := s.db.Pool.Query(ctx, listLongWindowMetricsByMintsSQL, mints, nowTs)
+	if err != nil {
+		return nil, fmt.Errorf("list long window metrics by mints: %w", err)
+	}
+	defer rows.Close()
+
+	items := make(map[string]LongWindowMetricsRecord, len(mints))
+	for rows.Next() {
+		var record LongWindowMetricsRecord
+		if err := rows.Scan(
+			&record.Mint,
+			&record.AnchorPrice1h,
+			&record.AnchorPrice4h,
+			&record.AnchorPrice24h,
+			&record.Txns1h,
+			&record.Txns4h,
+			&record.Txns24h,
+			&record.Buys1h,
+			&record.Buys4h,
+			&record.Buys24h,
+			&record.Sells1h,
+			&record.Sells4h,
+			&record.Sells24h,
+			&record.Volume1h,
+			&record.Volume4h,
+			&record.Volume24h,
+			&record.BuyVolume1h,
+			&record.BuyVolume4h,
+			&record.BuyVolume24h,
+			&record.SellVolume1h,
+			&record.SellVolume4h,
+			&record.SellVolume24h,
+		); err != nil {
+			return nil, fmt.Errorf("scan long window metrics row: %w", err)
+		}
+		items[record.Mint] = record
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate long window metrics rows: %w", err)
+	}
+
+	return items, nil
+}
+
+func (s *ReadModelStore) UpsertTokenMetricsCurrent(ctx context.Context, records []TokenMetricsCurrentRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	exec := executorFromContext(ctx, s.db.Pool)
+	batch := &pgx.Batch{}
+	for _, record := range records {
+		var latestEventUnix int64
+		if record.LatestEventUnix != nil {
+			latestEventUnix = *record.LatestEventUnix
+		}
+		batch.Queue(
+			upsertTokenMetricsCurrentSQL,
+			record.Mint,
+			record.LatestPrice,
+			latestEventUnix,
+			record.AnchorPrice1m,
+			record.AnchorPrice5m,
+			record.AnchorPrice1h,
+			record.AnchorPrice4h,
+			record.AnchorPrice24h,
+			record.Txns1m,
+			record.Txns5m,
+			record.Txns1h,
+			record.Txns4h,
+			record.Txns24h,
+			record.Buys1m,
+			record.Buys5m,
+			record.Buys1h,
+			record.Buys4h,
+			record.Buys24h,
+			record.Sells1m,
+			record.Sells5m,
+			record.Sells1h,
+			record.Sells4h,
+			record.Sells24h,
+			record.Volume1m,
+			record.Volume5m,
+			record.Volume1h,
+			record.Volume4h,
+			record.Volume24h,
+			record.BuyVolume1m,
+			record.BuyVolume5m,
+			record.BuyVolume1h,
+			record.BuyVolume4h,
+			record.BuyVolume24h,
+			record.SellVolume1m,
+			record.SellVolume5m,
+			record.SellVolume1h,
+			record.SellVolume4h,
+			record.SellVolume24h,
+			record.SourceLogID,
+		)
+	}
+
+	results := exec.SendBatch(ctx, batch)
+	defer results.Close()
+	for _, record := range records {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("upsert token metrics current mint=%s: %w", record.Mint, err)
+		}
+	}
+	return nil
+}
+
+func (s *ReadModelStore) LoadTokenMetricsCurrentByMint(ctx context.Context, mint string) (*TokenMetricsCurrentRecord, error) {
+	row := s.db.Pool.QueryRow(ctx, loadTokenMetricsCurrentByMintSQL, mint)
+
+	record, err := scanTokenMetricsCurrentRow(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load token metrics current by mint=%s: %w", mint, err)
+	}
+
+	return record, nil
+}
+
+func (s *ReadModelStore) InsertTradeEventsBatch(ctx context.Context, trades []TradeEventRecord) error {
+	if len(trades) == 0 {
+		return nil
+	}
+
+	exec := executorFromContext(ctx, s.db.Pool)
+	batch := &pgx.Batch{}
+	for _, trade := range trades {
+		batch.Queue(
+			insertTokenTradeEventSQL,
+			unixToTimestampSeconds(trade.EventUnixTS),
+			trade.EventID,
+			trade.Mint,
+			trade.MarketID,
+			trade.MarketType,
+			trade.Protocol,
+			trade.Side,
+			trade.IxName,
+			trade.UserAddress,
+			trade.QuoteMint,
+			trade.TokenAmountRaw,
+			trade.QuoteAmountRaw,
+			trade.TxSignature,
+			int64(trade.Slot),
+			trade.RawEventSource,
+		)
+	}
+
+	results := exec.SendBatch(ctx, batch)
+	defer results.Close()
+	for _, trade := range trades {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("insert trade event mint=%s event_id=%s: %w", trade.Mint, trade.EventID, err)
+		}
+	}
+	return nil
+}
+
+func (s *ReadModelStore) InsertActivityEventsBatch(ctx context.Context, activities []ActivityEventRecord) error {
+	if len(activities) == 0 {
+		return nil
+	}
+
+	exec := executorFromContext(ctx, s.db.Pool)
+	batch := &pgx.Batch{}
+	for _, activity := range activities {
+		details := activity.Details
+		if len(details) == 0 {
+			details = json.RawMessage(`{}`)
+		}
+		batch.Queue(
+			insertTokenActivityEventSQL,
+			unixToTimestampSeconds(activity.EventUnixTS),
+			activity.EventID,
+			activity.Mint,
+			activity.Protocol,
+			activity.EventType,
+			activity.ActivityType,
+			activity.MarketID,
+			activity.MarketType,
+			activity.UserAddress,
+			activity.Side,
+			activity.QuoteMint,
+			activity.TokenAmountRaw,
+			activity.QuoteAmountRaw,
+			activity.TxSignature,
+			int64(activity.Slot),
+			activity.RawEventSource,
+			[]byte(details),
+		)
+	}
+
+	results := exec.SendBatch(ctx, batch)
+	defer results.Close()
+	for _, activity := range activities {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("insert activity event mint=%s event_id=%s: %w", activity.Mint, activity.EventID, err)
+		}
+	}
+	return nil
+}
+
+func (s *ReadModelStore) ListMetricBackfillCandidates(ctx context.Context, limit int) ([]string, error) {
+	rows, err := s.db.Pool.Query(ctx, listMetricBackfillCandidatesSQL, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list metric backfill candidates: %w", err)
+	}
+	defer rows.Close()
+
+	mints := make([]string, 0, limit)
+	for rows.Next() {
+		var mint string
+		if err := rows.Scan(&mint); err != nil {
+			return nil, fmt.Errorf("scan metric backfill candidate: %w", err)
+		}
+		mints = append(mints, mint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate metric backfill candidates: %w", err)
+	}
+	return mints, nil
+}
+
+func (s *ReadModelStore) ListLatestTradeSeedsByMints(ctx context.Context, mints []string) (map[string]LatestTradeSeedRecord, error) {
+	if len(mints) == 0 {
+		return map[string]LatestTradeSeedRecord{}, nil
+	}
+
+	rows, err := s.db.Pool.Query(ctx, listLatestTradeSeedsByMintsSQL, mints)
+	if err != nil {
+		return nil, fmt.Errorf("list latest trade seeds by mints: %w", err)
+	}
+	defer rows.Close()
+
+	items := make(map[string]LatestTradeSeedRecord, len(mints))
+	for rows.Next() {
+		var record LatestTradeSeedRecord
+		if err := rows.Scan(&record.Mint, &record.LatestPrice, &record.LatestEventUnix); err != nil {
+			return nil, fmt.Errorf("scan latest trade seed row: %w", err)
+		}
+		items[record.Mint] = record
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate latest trade seed rows: %w", err)
+	}
+	return items, nil
 }
 
 func (s *ReadModelStore) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]TokenCandleRecord, error) {
@@ -1740,6 +2402,81 @@ func (s *ReadModelStore) ListCandlesByMint(ctx context.Context, mint string, res
 
 type tokenSnapshotScanner interface {
 	Scan(dest ...any) error
+}
+
+func scanTradeSummaryRow(scanner tokenSnapshotScanner) (*TradeSummaryRecord, error) {
+	var summary TradeSummaryRecord
+	if err := scanner.Scan(
+		&summary.QuoteMint,
+		&summary.LatestPrice,
+		&summary.LatestEventUnix,
+		&summary.Price5mAgo,
+		&summary.Price1hAgo,
+		&summary.Price4hAgo,
+		&summary.Price24hAgo,
+		&summary.Txns24h,
+		&summary.Buys24h,
+		&summary.Sells24h,
+		&summary.Volume24h,
+		&summary.BuyVolume24h,
+		&summary.SellVolume24h,
+		&summary.Makers24h,
+		&summary.Buyers24h,
+		&summary.Sellers24h,
+	); err != nil {
+		return nil, err
+	}
+
+	return &summary, nil
+}
+
+func scanTokenMetricsCurrentRow(scanner tokenSnapshotScanner) (*TokenMetricsCurrentRecord, error) {
+	var record TokenMetricsCurrentRecord
+	if err := scanner.Scan(
+		&record.Mint,
+		&record.LatestPrice,
+		&record.LatestEventUnix,
+		&record.AnchorPrice1m,
+		&record.AnchorPrice5m,
+		&record.AnchorPrice1h,
+		&record.AnchorPrice4h,
+		&record.AnchorPrice24h,
+		&record.Txns1m,
+		&record.Txns5m,
+		&record.Txns1h,
+		&record.Txns4h,
+		&record.Txns24h,
+		&record.Buys1m,
+		&record.Buys5m,
+		&record.Buys1h,
+		&record.Buys4h,
+		&record.Buys24h,
+		&record.Sells1m,
+		&record.Sells5m,
+		&record.Sells1h,
+		&record.Sells4h,
+		&record.Sells24h,
+		&record.Volume1m,
+		&record.Volume5m,
+		&record.Volume1h,
+		&record.Volume4h,
+		&record.Volume24h,
+		&record.BuyVolume1m,
+		&record.BuyVolume5m,
+		&record.BuyVolume1h,
+		&record.BuyVolume4h,
+		&record.BuyVolume24h,
+		&record.SellVolume1m,
+		&record.SellVolume5m,
+		&record.SellVolume1h,
+		&record.SellVolume4h,
+		&record.SellVolume24h,
+		&record.SourceLogID,
+	); err != nil {
+		return nil, err
+	}
+
+	return &record, nil
 }
 
 func scanTokenSnapshot(scanner tokenSnapshotScanner) (TokenSnapshotRecord, error) {

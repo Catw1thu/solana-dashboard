@@ -65,17 +65,18 @@ func (m *mockTokenEventReader) LoadProjectionCheckpoint(ctx context.Context, pro
 }
 
 type mockTokenReadModel struct {
-	boardRows    []store.TokenBoardRecord
-	searchRows   []store.TokenSearchRecord
-	snapshots    []store.TokenSnapshotRecord
-	snapshot     *store.TokenSnapshotRecord
-	markets      []store.TokenMarketRecord
-	trades       []store.TradeEventRecord
-	tradeMetrics []store.TradeMetricPoint
-	activities   []store.ActivityEventRecord
-	summary      *store.TradeSummaryRecord
-	candles      []store.TokenCandleRecord
-	err          error
+	boardRows      []store.TokenBoardRecord
+	searchRows     []store.TokenSearchRecord
+	snapshots      []store.TokenSnapshotRecord
+	snapshot       *store.TokenSnapshotRecord
+	markets        []store.TokenMarketRecord
+	trades         []store.TradeEventRecord
+	tradeMetrics   []store.TradeMetricPoint
+	activities     []store.ActivityEventRecord
+	summary        *store.TradeSummaryRecord
+	currentMetrics *store.TokenMetricsCurrentRecord
+	candles        []store.TokenCandleRecord
+	err            error
 }
 
 func (m *mockTokenReadModel) ListTokenBoardRows(ctx context.Context, query store.TokenBoardQuery) ([]store.TokenBoardRecord, error) {
@@ -207,6 +208,13 @@ func (m *mockTokenReadModel) ListTradeMetricsForStatsByMint(ctx context.Context,
 		return nil, m.err
 	}
 	return m.tradeMetrics, nil
+}
+
+func (m *mockTokenReadModel) LoadTokenMetricsCurrentByMint(ctx context.Context, mint string) (*store.TokenMetricsCurrentRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.currentMetrics, nil
 }
 
 func (m *mockTokenReadModel) ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]store.TokenCandleRecord, error) {

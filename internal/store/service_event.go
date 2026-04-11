@@ -69,6 +69,11 @@ from projection_offsets
 where projector_name = $1
 `
 
+const loadLatestServiceEventLogIDSQL = `
+select coalesce(max(log_id), 0)
+from service_events
+`
+
 const listServiceEventsByMintSQL = `
 select
     log_id,
@@ -357,11 +362,39 @@ func (s *ServiceEventStore) SaveProjectionCheckpoint(
 	projectorName string,
 	lastLogID int64,
 ) error {
-	_, err := s.db.Pool.Exec(ctx, saveProjectionCheckpointSQL, projectorName, lastLogID)
+	exec := executorFromContext(ctx, s.db.Pool)
+	_, err := exec.Exec(ctx, saveProjectionCheckpointSQL, projectorName, lastLogID)
 	if err != nil {
 		return fmt.Errorf("save projection checkpoint for %s: %w", projectorName, err)
 	}
 
+	return nil
+}
+
+func (s *ServiceEventStore) LoadLatestServiceEventLogID(ctx context.Context) (int64, error) {
+	var latestLogID int64
+	if err := s.db.Pool.QueryRow(ctx, loadLatestServiceEventLogIDSQL).Scan(&latestLogID); err != nil {
+		return 0, fmt.Errorf("load latest service event log id: %w", err)
+	}
+	return latestLogID, nil
+}
+
+func (s *ServiceEventStore) RunInTransaction(ctx context.Context, fn func(context.Context) error) error {
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	txCtx := contextWithExecutor(ctx, tx)
+	if err := fn(txCtx); err != nil {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			return fmt.Errorf("rollback transaction after error %v: %w", err, rollbackErr)
+		}
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
 	return nil
 }
 

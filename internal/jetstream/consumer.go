@@ -10,6 +10,7 @@ import (
 	"solana-dashboard-go/internal/events"
 	serviceeventpb "solana-dashboard-go/internal/gen/serviceeventpb"
 	"solana-dashboard-go/internal/ingest"
+	"solana-dashboard-go/internal/observability"
 
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/proto"
@@ -81,12 +82,20 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 		for _, message := range messages {
 			if err := c.handleMessage(ctx, message); err != nil {
+				observability.Default().IncCounter("jetstream_consume_errors_total", 1)
 				log.Printf("jetstream consume error: %v", err)
 				if nakErr := message.Nak(); nakErr != nil {
 					log.Printf("jetstream nak error: %v", nakErr)
 				}
 				continue
 			}
+
+			if meta, err := message.Metadata(); err == nil && meta != nil {
+				observability.Default().SetGauge("jetstream_pending_messages", int64(meta.NumPending))
+				observability.Default().SetGauge("jetstream_last_stream_sequence", int64(meta.Sequence.Stream))
+				observability.Default().SetGauge("jetstream_last_consumer_sequence", int64(meta.Sequence.Consumer))
+			}
+			observability.Default().IncCounter("jetstream_messages_total", 1)
 
 			if err := message.Ack(); err != nil {
 				log.Printf("jetstream ack error: %v", err)

@@ -50,6 +50,7 @@ type tokenReadModel interface {
 	ListActivityEventsPageByMint(ctx context.Context, mint string, limit int, cursor *store.ActivityEventCursor) (*store.ActivityEventPage, error)
 	LoadTradeSummaryByMint(ctx context.Context, mint string) (*store.TradeSummaryRecord, error)
 	ListTradeMetricsForStatsByMint(ctx context.Context, mint string) ([]store.TradeMetricPoint, error)
+	LoadTokenMetricsCurrentByMint(ctx context.Context, mint string) (*store.TokenMetricsCurrentRecord, error)
 	ListCandlesByMint(ctx context.Context, mint string, resolution string, limit int, beforeTime *int64) ([]store.TokenCandleRecord, error)
 }
 
@@ -475,6 +476,14 @@ func (s *TokenService) BuildRealtimeStatsPayload(ctx context.Context, mint strin
 		return nil, ErrTokenNotFound
 	}
 
+	current, err := s.model.LoadTokenMetricsCurrentByMint(ctx, mint)
+	if err != nil {
+		return nil, fmt.Errorf("load token metrics current by mint=%s: %w", mint, err)
+	}
+	if payload, ok := broadcaster.BuildPayloadFromCurrentMetrics(mint, current); ok {
+		return payload, nil
+	}
+
 	metrics, err := s.model.ListTradeMetricsForStatsByMint(ctx, mint)
 	if err != nil {
 		return nil, fmt.Errorf("list trade metrics for mint=%s: %w", mint, err)
@@ -888,15 +897,15 @@ func normalizeTokenListView(view string) string {
 func normalizeStatsWindow(window string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(window)) {
 	case "", "24h", "1d":
-		return "24 hours", nil
+		return "24h", nil
 	case "1m":
-		return "1 minute", nil
+		return "1m", nil
 	case "5m":
-		return "5 minutes", nil
+		return "5m", nil
 	case "1h":
-		return "1 hour", nil
+		return "1h", nil
 	case "4h":
-		return "4 hours", nil
+		return "4h", nil
 	default:
 		return "", ErrInvalidTokenListWindow
 	}

@@ -11,6 +11,7 @@ import (
 
 	"solana-dashboard-go/internal/broadcaster"
 	"solana-dashboard-go/internal/events"
+	"solana-dashboard-go/internal/observability"
 	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
 
@@ -27,6 +28,9 @@ type WSMessage struct {
 }
 
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
+	observability.Default().AddGauge("ws_connections", 1)
+	defer observability.Default().AddGauge("ws_connections", -1)
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{"*"},
 	})
@@ -53,8 +57,12 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		subsMu.Lock()
 		defer subsMu.Unlock()
+		observability.Default().AddGauge("ws_topic_subscriptions", -int64(len(subs)))
 		for _, sub := range subs {
 			h.service.Unsubscribe(sub)
+		}
+		if h.service != nil {
+			observability.Default().SetGauge("ws_hub_subscribers", int64(h.service.SubscribeCount()))
 		}
 	}()
 
@@ -72,6 +80,10 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 				if _, exists := subs[msg.Topic]; !exists {
 					topicSub := h.service.Subscribe(msg.Topic, 64)
 					subs[msg.Topic] = topicSub
+					observability.Default().AddGauge("ws_topic_subscriptions", 1)
+					if h.service != nil {
+						observability.Default().SetGauge("ws_hub_subscribers", int64(h.service.SubscribeCount()))
+					}
 
 					if snapshot, err := h.tokenStatSnapshot(msg.Topic); err == nil && snapshot != nil {
 						select {
@@ -91,6 +103,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 						if !replayReady {
 							replayMax = *sinceLogID
 							go func(afterLogID int64) {
+								observability.Default().IncCounter("ws_replay_requests_total", 1)
 								replayedMax, err := h.replayTopic(ctx, topic, afterLogID, outCh)
 								if err != nil {
 									status := websocket.StatusInternalError
@@ -98,6 +111,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 									if errors.Is(err, errReplayBackpressure) {
 										status = websocket.StatusPolicyViolation
 										reason = "replay_overflow"
+										observability.Default().IncCounter("ws_replay_overflow_total", 1)
 									}
 									closeConn(status, reason)
 									return
@@ -114,6 +128,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 								if !ok {
 									return
 								}
+								observability.Default().IncCounter("ws_subscriber_overflow_total", 1)
 								closeConn(websocket.StatusPolicyViolation, "subscriber_overflow")
 								return
 							case replayedMax := <-replayDone:
@@ -124,6 +139,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 										continue
 									}
 									if !enqueueEnvelope(ctx, outCh, ev) {
+										observability.Default().IncCounter("ws_writer_overflow_total", 1)
 										closeConn(websocket.StatusPolicyViolation, "writer_overflow")
 										return
 									}
@@ -154,6 +170,10 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 				if sub, exists := subs[msg.Topic]; exists {
 					delete(subs, msg.Topic)
 					h.service.Unsubscribe(sub)
+					observability.Default().AddGauge("ws_topic_subscriptions", -1)
+					if h.service != nil {
+						observability.Default().SetGauge("ws_hub_subscribers", int64(h.service.SubscribeCount()))
+					}
 				}
 				subsMu.Unlock()
 			}
@@ -215,6 +235,7 @@ func (h *Handler) replayTopic(ctx context.Context, topic string, afterLogID int6
 			if !enqueueEnvelope(ctx, outCh, event) {
 				return lastLogID, errReplayBackpressure
 			}
+			observability.Default().IncCounter("ws_replayed_events_total", 1)
 		}
 
 		if len(eventsList) < batchSize {
