@@ -7,6 +7,8 @@ import { ExternalLink, Copy, Check } from "lucide-react";
 import { formatAddress, formatPrice, formatAmount } from "@/utils/format";
 import {
   startTransition,
+  type ReactNode,
+  useSyncExternalStore,
   useCallback,
   useEffect,
   useMemo,
@@ -85,6 +87,75 @@ function bucketUnixTime(
 function formatMarkerDateTime(eventUnixTs: number): string {
   const ms = eventUnixTs > 1e11 ? eventUnixTs : eventUnixTs * 1000;
   return new Date(ms).toLocaleString("zh-CN");
+}
+
+let relativeClockNowMs = Date.now();
+let relativeClockTimer: ReturnType<typeof setInterval> | null = null;
+const relativeClockListeners = new Set<() => void>();
+
+function emitRelativeClock() {
+  relativeClockNowMs = Date.now();
+  for (const listener of relativeClockListeners) {
+    listener();
+  }
+}
+
+function subscribeRelativeClock(listener: () => void) {
+  relativeClockListeners.add(listener);
+  if (relativeClockTimer == null) {
+    relativeClockTimer = setInterval(emitRelativeClock, 1_000);
+  }
+
+  return () => {
+    relativeClockListeners.delete(listener);
+    if (relativeClockListeners.size === 0 && relativeClockTimer != null) {
+      clearInterval(relativeClockTimer);
+      relativeClockTimer = null;
+    }
+  };
+}
+
+function getRelativeClockSnapshot() {
+  return relativeClockNowMs;
+}
+
+function formatRelativeAge(unixTs: number, nowMs: number): string {
+  if (!unixTs) return "--";
+  const ms = unixTs > 1e11 ? unixTs : unixTs * 1000;
+  const diff = Math.max(0, nowMs - ms);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function RelativeAgeText({
+  unixTs,
+  title,
+  className,
+}: {
+  unixTs: number | null | undefined;
+  title?: string;
+  className?: string;
+}) {
+  const nowMs = useSyncExternalStore(
+    subscribeRelativeClock,
+    getRelativeClockSnapshot,
+    getRelativeClockSnapshot,
+  );
+
+  if (!unixTs) {
+    return <span className={className}>--</span>;
+  }
+
+  return (
+    <span className={className} title={title}>
+      {formatRelativeAge(unixTs, nowMs)}
+    </span>
+  );
 }
 
 function metricTone(value?: number | null): MetricTone {
@@ -370,18 +441,23 @@ export default function TokenDetailPage() {
   const [liveCandle, setLiveCandle] = useState<TokenCandle | undefined>(
     undefined,
   );
-  const [nowMs, setNowMs] = useState<number | null>(null);
   const [selectedStatsWindow, setSelectedStatsWindow] =
     useState<StatsWindow>("1m");
-  const { isConnected, subscribe, unsubscribe, setTopicCursor, addMessageListener } =
-    useAppWebSocket();
+  const {
+    isConnected,
+    subscribe,
+    unsubscribe,
+    setTopicCursor,
+    addMessageListener,
+  } = useAppWebSocket();
   const refreshTimerRef = useRef<number | null>(null);
   const lastRefreshAtRef = useRef<number>(0);
   const hasConnectedOnceRef = useRef(false);
   const wasConnectedRef = useRef(false);
   const tokenDetailRef = useRef<TokenDetail | null>(null);
-  const applyRealtimeEnvelopeRef =
-    useRef<(envelope: TokenEventEnvelope) => void>(() => {});
+  const applyRealtimeEnvelopeRef = useRef<
+    (envelope: TokenEventEnvelope) => void
+  >(() => {});
   const candlesRef = useRef<TokenCandle[]>([]);
   const resolutionRef = useRef<CandleResolution>("1m");
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
@@ -484,14 +560,6 @@ export default function TokenDetailPage() {
     isActivityLoadingMoreRef.current = isActivityLoadingMore;
   }, [isActivityLoadingMore]);
 
-  useEffect(() => {
-    const syncNow = () => setNowMs(Date.now());
-    syncNow();
-
-    const intervalId = window.setInterval(syncNow, 1_000);
-    return () => window.clearInterval(intervalId);
-  }, []);
-
   const fetchTokenDetail = useCallback(async () => {
     if (!address) return;
     try {
@@ -578,7 +646,9 @@ export default function TokenDetailPage() {
             activityBootstrapPendingRef.current = false;
             for (const envelope of [...buffered]
               .filter((item) => (item.log_id ?? 0) > snapshotLogId)
-              .sort((left, right) => (left.log_id ?? 0) - (right.log_id ?? 0))) {
+              .sort(
+                (left, right) => (left.log_id ?? 0) - (right.log_id ?? 0),
+              )) {
               applyRealtimeEnvelopeRef.current(envelope);
             }
           }
@@ -773,7 +843,13 @@ export default function TokenDetailPage() {
         };
       });
     },
-    [address, enqueueRealtimeActivity, scheduleRefresh, setCandles, setTopicCursor],
+    [
+      address,
+      enqueueRealtimeActivity,
+      scheduleRefresh,
+      setCandles,
+      setTopicCursor,
+    ],
   );
 
   useEffect(() => {
@@ -942,20 +1018,6 @@ export default function TokenDetailPage() {
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   }, []);
-
-  const formatAge = (unixTs: number) => {
-    if (!unixTs || nowMs == null) return "--";
-    // backend sends seconds, Date.now() returns milliseconds
-    const ms = unixTs > 1e11 ? unixTs : unixTs * 1000;
-    const diff = nowMs - ms;
-    const s = Math.floor(diff / 1000);
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h`;
-    return `${Math.floor(h / 24)}d`;
-  };
 
   const computePriceChange = (startPrice: number, currentPrice: number) => {
     if (!startPrice || !currentPrice) return null;
@@ -1330,7 +1392,7 @@ export default function TokenDetailPage() {
                             : activity.event_unix_ts * 1000,
                         ).toLocaleString()}
                       >
-                        {formatAge(activity.event_unix_ts)}
+                        <RelativeAgeText unixTs={activity.event_unix_ts} />
                       </div>
                       <div>
                         <span className={clsx("badge", badgeClass)}>
@@ -1459,7 +1521,13 @@ export default function TokenDetailPage() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <MiniInfoCell
                   label="⏱ 代币时长"
-                  value={createdAtTs != null ? formatAge(createdAtTs) : "--"}
+                  value={
+                    createdAtTs != null ? (
+                      <RelativeAgeText unixTs={createdAtTs} />
+                    ) : (
+                      "--"
+                    )
+                  }
                   toneClass="text-amber-300"
                 />
                 <MiniInfoCell
@@ -1614,7 +1682,7 @@ function MiniInfoCell({
   toneClass = "text-(--text-primary)",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   toneClass?: string;
 }) {
   return (
