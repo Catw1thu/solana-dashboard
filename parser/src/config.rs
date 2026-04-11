@@ -10,8 +10,6 @@ pub struct Config {
 }
 
 pub fn load_config() -> Result<Config> {
-    dotenvy::dotenv().ok();
-
     let grpc_endpoint = std::env::var("GRPC_ENDPOINT")?.trim().to_string();
     let grpc_token = std::env::var("GRPC_TOKEN")?.trim().to_string();
     let nats_url = std::env::var("NATS_URL")

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="$ROOT_DIR/.env.compose"
+ENV_FILE="$ROOT_DIR/.env"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "缺少 $ENV_FILE"
@@ -11,4 +11,4 @@ fi
 
 cd "$ROOT_DIR"
 
-docker compose --env-file "$ENV_FILE" logs -f --tail=200 dashboard-go dashboard-lab
+docker compose --env-file "$ENV_FILE" logs -f --tail=200 backend parser frontend

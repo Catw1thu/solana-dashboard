@@ -24,5 +24,5 @@ stop_one() {
   rm -f "$pid_file"
 }
 
-stop_one "dashboard-lab" "$RUN_DIR/lab.pid"
-stop_one "dashboard-go" "$RUN_DIR/go.pid"
+stop_one "parser" "$RUN_DIR/parser.pid"
+stop_one "backend" "$RUN_DIR/backend.pid"

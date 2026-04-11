@@ -1,0 +1,12 @@
+.DS_Store
+
+# Single root env file
+.env
+!.env.example
+
+# Local runtime state
+.run-local/
+data/*
+!data/.gitkeep
+logs-local/*
+!logs-local/.gitkeep

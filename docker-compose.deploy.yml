@@ -6,20 +6,20 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:16
+    image: timescale/timescaledb:latest-pg16
     container_name: solana-dashboard-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: dashboard
-      POSTGRES_DB: solana_dashboard
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dashboard}
+      POSTGRES_DB: ${POSTGRES_DB:-solana_dashboard}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dashboard -d solana_dashboard"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard} -d ${POSTGRES_DB:-solana_dashboard}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -54,7 +54,7 @@ services:
     logging: *default-logging
 
   migrate:
-    image: ${MIGRATE_IMAGE:?set in .env.deploy}
+    image: ${MIGRATE_IMAGE:?set in .env}
     pull_policy: always
     container_name: solana-dashboard-migrate
     restart: "no"
@@ -62,13 +62,13 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/solana_dashboard?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard}@postgres:5432/${POSTGRES_DB:-solana_dashboard}?sslmode=disable
     logging: *default-logging
 
-  dashboard-go:
-    image: ${GO_IMAGE:?set in .env.deploy}
+  backend:
+    image: ${BACKEND_IMAGE:?set in .env}
     pull_policy: always
-    container_name: solana-dashboard-go
+    container_name: solana-dashboard-backend
     restart: unless-stopped
     depends_on:
       migrate:
@@ -76,17 +76,17 @@ services:
       nats:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/solana_dashboard?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard}@postgres:5432/${POSTGRES_DB:-solana_dashboard}?sslmode=disable
       API_ADDR: 0.0.0.0:8080
       NATS_URL: nats://nats:4222
     ports:
-      - "127.0.0.1:${GO_API_PORT:-8081}:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
     logging: *default-logging
 
-  dashboard-lab:
-    image: ${LAB_IMAGE:?set in .env.deploy}
+  parser:
+    image: ${PARSER_IMAGE:?set in .env}
     pull_policy: always
-    container_name: solana-dashboard-lab
+    container_name: solana-dashboard-parser
     restart: unless-stopped
     depends_on:
       migrate:
@@ -96,11 +96,26 @@ services:
       nats:
         condition: service_started
     environment:
-      GRPC_ENDPOINT: ${GRPC_ENDPOINT:?set in .env.deploy}
-      GRPC_TOKEN: ${GRPC_TOKEN:?set in .env.deploy}
-      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/solana_dashboard?sslmode=disable
+      GRPC_ENDPOINT: ${GRPC_ENDPOINT:?set in .env}
+      GRPC_TOKEN: ${GRPC_TOKEN:?set in .env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard}@postgres:5432/${POSTGRES_DB:-solana_dashboard}?sslmode=disable
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
-      CAPTURE_SAMPLES: "0"
+      CAPTURE_SAMPLES: ${CAPTURE_SAMPLES:-0}
       LISTEN_SECONDS: ${LISTEN_SECONDS:-315360000}
+    logging: *default-logging
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?set in .env}
+    pull_policy: always
+    container_name: solana-dashboard-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8081}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://127.0.0.1:8081}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3001}:3000"
     logging: *default-logging

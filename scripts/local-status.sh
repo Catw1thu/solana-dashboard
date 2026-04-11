@@ -22,5 +22,5 @@ print_status() {
   fi
 }
 
-print_status "dashboard-go" "$RUN_DIR/go.pid"
-print_status "dashboard-lab" "$RUN_DIR/lab.pid"
+print_status "backend" "$RUN_DIR/backend.pid"
+print_status "parser" "$RUN_DIR/parser.pid"
