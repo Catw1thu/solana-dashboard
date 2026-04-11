@@ -1,0 +1,324 @@
+@import "tailwindcss";
+
+/* ============================================
+   SOLANA DASHBOARD DESIGN SYSTEM
+   Inspired by GMGN.ai & DexScreener
+   ============================================ */
+
+/* Tailwind v4 Theme - All theme tokens defined here */
+@theme inline {
+  /* Background Colors */
+  --color-bg-primary: #0b0e11;
+  --color-bg-secondary: #0d1117;
+  --color-bg-tertiary: #1a1e26;
+  --color-bg-elevated: #20242d;
+
+  /* Border Colors */
+  --color-border-primary: #1a1e26;
+  --color-border-secondary: #2a2e36;
+  --color-border-hover: #3a3e46;
+
+  /* Text Colors */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #c8ccd4;
+  --color-text-muted: #88909f;
+  --color-text-disabled: #5a606a;
+
+  /* Accent Colors */
+  --color-accent-green: #00cf9d;
+  --color-accent-red: #ff4d4d;
+  --color-accent-blue: #3b82f6;
+  --color-accent-yellow: #f59e0b;
+  --color-accent-purple: #a855f7;
+
+  /* Accent Transparent */
+  --color-accent-green-10: oklch(77% 0.15 166 / 0.1);
+  --color-accent-green-15: oklch(77% 0.15 166 / 0.15);
+  --color-accent-green-20: oklch(77% 0.15 166 / 0.2);
+  --color-accent-red-15: oklch(65% 0.2 25 / 0.15);
+
+  /* Standard Tailwind mappings */
+  --color-background: #0b0e11;
+  --color-foreground: #ffffff;
+
+  /* Fonts */
+  --font-inter: var(--font-inter);
+  --font-manrope: var(--font-manrope);
+}
+/* Theme Variables - wrapped in @layer base to prevent purging */
+@layer base {
+  /* Dark Theme (default) */
+  :root,
+  [data-theme="dark"] {
+    --bg-primary: #0b0e11;
+    --bg-secondary: #0d1117;
+    --bg-tertiary: #1a1e26;
+    --bg-elevated: #20242d;
+
+    --border-primary: #1a1e26;
+    --border-secondary: #2a2e36;
+    --border-hover: #3a3e46;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c8ccd4;
+    --text-muted: #88909f;
+    --text-disabled: #5a606a;
+
+    --accent-green: #00cf9d;
+    --accent-red: #ff4d4d;
+    --accent-blue: #3b82f6;
+    --accent-yellow: #f59e0b;
+    --accent-purple: #a855f7;
+
+    --accent-green-10: rgba(0, 207, 157, 0.1);
+    --accent-green-15: rgba(0, 207, 157, 0.15);
+    --accent-green-20: rgba(0, 207, 157, 0.2);
+    --accent-red-15: rgba(255, 77, 77, 0.15);
+
+    --chart-grid: rgba(255, 255, 255, 0.03);
+    --chart-axis: rgba(255, 255, 255, 0.1);
+
+    --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
+  }
+
+  /* Light Theme */
+  [data-theme="light"] {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --bg-elevated: #e2e8f0;
+
+    --border-primary: #e2e8f0;
+    --border-secondary: #cbd5e1;
+    --border-hover: #94a3b8;
+
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-disabled: #94a3b8;
+
+    --accent-green: #059669;
+    --accent-red: #dc2626;
+    --accent-blue: #2563eb;
+    --accent-yellow: #d97706;
+    --accent-purple: #7c3aed;
+
+    --accent-green-10: rgba(5, 150, 105, 0.1);
+    --accent-green-15: rgba(5, 150, 105, 0.15);
+    --accent-green-20: rgba(5, 150, 105, 0.2);
+    --accent-red-15: rgba(220, 38, 38, 0.15);
+
+    --chart-grid: rgba(0, 0, 0, 0.03);
+    --chart-axis: rgba(0, 0, 0, 0.1);
+  }
+
+  /* Base Styles */
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Glassmorphism */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-primary);
+}
+
+/* Card Styles */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 0.75rem;
+}
+
+.card-hover {
+  transition: border-color 0.2s ease;
+}
+
+.card-hover:hover {
+  border-color: var(--border-secondary);
+}
+
+/* Text Utilities */
+.text-up {
+  color: var(--accent-green);
+}
+.text-down {
+  color: var(--accent-red);
+}
+
+/* Badge Styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-buy {
+  background: var(--accent-green-15);
+  color: var(--accent-green);
+}
+
+.badge-sell {
+  background: var(--accent-red-15);
+  color: var(--accent-red);
+}
+
+/* Live Indicator */
+.live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Highlight Animation for New Items */
+@keyframes highlight-fade {
+  0% {
+    background-color: var(--accent-green-20);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-highlight {
+  animation: highlight-fade 1s ease-out forwards;
+}
+
+/* Table Styles */
+.table-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.table-row {
+  border-bottom: 1px solid rgba(26, 30, 38, 0.5);
+  transition: background-color 0.2s ease;
+}
+
+.table-row:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Button Styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-active {
+  background: var(--accent-green-10);
+  color: var(--accent-green);
+}
+
+/* Scrollbar Styles */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-elevated) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--border-secondary);
+}
+
+/* ============================================
+   COMPONENT-SPECIFIC STYLES
+   ============================================ */
+
+/* Address/Hash Display */
+.address {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.address-link {
+  color: var(--accent-blue);
+  transition: color 0.2s ease;
+}
+
+.address-link:hover {
+  color: var(--accent-green);
+}
+
+/* Price Display */
+.price {
+  font-family: var(--font-mono);
+}
+
+.price-up {
+  color: var(--accent-green);
+}
+.price-down {
+  color: var(--accent-red);
+}
+
+/* Section Header */
+.section-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
