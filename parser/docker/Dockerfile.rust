@@ -2,10 +2,11 @@ FROM rust:1.85-bookworm AS build
 
 WORKDIR /src
 
-COPY Cargo.toml Cargo.lock build.rs rust-toolchain.toml ./
+COPY parser/Cargo.toml parser/Cargo.lock parser/build.rs parser/rust-toolchain.toml ./parser/
 COPY proto ./proto
-COPY src ./src
+COPY parser/src ./parser/src
 
+WORKDIR /src/parser
 RUN cargo build --release
 
 FROM debian:bookworm-slim
@@ -14,6 +15,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /src/target/release/solana-dashboard-lab /usr/local/bin/solana-dashboard-lab
+COPY --from=build /src/parser/target/release/solana-dashboard-lab /usr/local/bin/solana-dashboard-lab
 
 ENTRYPOINT ["/usr/local/bin/solana-dashboard-lab"]

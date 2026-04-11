@@ -87,8 +87,8 @@ services:
 
   parser:
     build:
-      context: ./parser
-      dockerfile: docker/Dockerfile.rust
+      context: .
+      dockerfile: ./parser/docker/Dockerfile.rust
     container_name: solana-dashboard-parser
     restart: unless-stopped
     depends_on:

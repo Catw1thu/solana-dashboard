@@ -4,7 +4,7 @@
 .env
 !.env.example
 
-# Local runtime state
+# Local runtime state only (never source code)
 .run-local/
 data/*
 !data/.gitkeep
