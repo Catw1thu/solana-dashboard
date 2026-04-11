@@ -22,7 +22,7 @@ jobs:
           - image_name: solana-dashboard-backend
             context: ./backend
             dockerfile: ./backend/docker/Dockerfile.api
-          - image_name: solana-dashboard-migrate
+          - image_name: solana-dashboard-db-migrate
             context: ./backend
             dockerfile: ./backend/docker/Dockerfile.migrate
           - image_name: solana-dashboard-parser
