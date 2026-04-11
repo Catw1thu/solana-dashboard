@@ -1,0 +1,10 @@
+FROM postgres:16
+
+WORKDIR /migrations
+
+COPY internal/db/migrations/ /migrations/
+COPY docker/migrate.sh /usr/local/bin/migrate
+
+RUN chmod +x /usr/local/bin/migrate
+
+ENTRYPOINT ["/usr/local/bin/migrate"]
