@@ -1,0 +1,17 @@
+FROM rust:1.85-bookworm AS build
+
+WORKDIR /src/solana-dashboard-lab
+
+COPY solana-dashboard-lab/ ./
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build /src/solana-dashboard-lab/target/release/solana-dashboard-lab /usr/local/bin/solana-dashboard-lab
+
+ENTRYPOINT ["/usr/local/bin/solana-dashboard-lab"]

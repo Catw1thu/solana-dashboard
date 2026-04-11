@@ -1,0 +1,117 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: solana-dashboard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: dashboard
+      POSTGRES_DB: solana_dashboard
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard -d solana_dashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: solana-dashboard-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no", "--dir", "/data"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-63799}:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *default-logging
+
+  nats:
+    image: nats:2.10
+    container_name: solana-dashboard-nats
+    restart: unless-stopped
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"
+    volumes:
+      - ./data/nats:/data
+    logging: *default-logging
+
+  migrate:
+    image: postgres:16
+    container_name: solana-dashboard-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: dashboard
+    volumes:
+      - ./solana-dashboard-go/internal/db/migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        for file in /migrations/*.sql; do
+          echo "applying $$file"
+          psql "postgresql://dashboard:dashboard@postgres:5432/solana_dashboard" -v ON_ERROR_STOP=1 -f "$$file"
+        done
+    logging: *default-logging
+
+  dashboard-go:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.go
+    container_name: solana-dashboard-go
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/solana_dashboard?sslmode=disable
+      API_ADDR: 0.0.0.0:8080
+      NATS_URL: nats://nats:4222
+    ports:
+      - "127.0.0.1:${GO_API_PORT:-8081}:8080"
+    logging: *default-logging
+
+  dashboard-lab:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.rust
+    container_name: solana-dashboard-lab
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      GRPC_ENDPOINT: ${GRPC_ENDPOINT:?set in .env.compose}
+      GRPC_TOKEN: ${GRPC_TOKEN:?set in .env.compose}
+      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/solana_dashboard?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      CAPTURE_SAMPLES: "0"
+      LISTEN_SECONDS: ${LISTEN_SECONDS:-315360000}
+    logging: *default-logging
