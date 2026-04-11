@@ -340,7 +340,8 @@ export const PoolTable = () => {
                   token.symbol || token.name || `${token.mint.slice(0, 4)}...`;
                 const ageBase = token.active_since || token.accepted_at;
                 const imageUrl = token.image_uri || token.uri;
-                const showImage = Boolean(imageUrl) && !failedImages[token.mint];
+                const showImage =
+                  Boolean(imageUrl) && !failedImages[token.mint];
                 const windowBuys = token.window_buys ?? 0;
                 const windowSells = token.window_sells ?? 0;
                 const stage = stageBadge(token);
