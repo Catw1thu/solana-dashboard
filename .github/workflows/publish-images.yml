@@ -19,10 +19,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: solana-dashboard-go
-            dockerfile: ./docker/Dockerfile.api
+          - image_name: solana-dashboard-backend
+            context: ./backend
+            dockerfile: ./backend/docker/Dockerfile.api
           - image_name: solana-dashboard-migrate
-            dockerfile: ./docker/Dockerfile.migrate
+            context: ./backend
+            dockerfile: ./backend/docker/Dockerfile.migrate
+          - image_name: solana-dashboard-parser
+            context: .
+            dockerfile: ./parser/docker/Dockerfile.rust
+          - image_name: solana-dashboard-frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
 
     steps:
       - name: Checkout
@@ -52,7 +60,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
