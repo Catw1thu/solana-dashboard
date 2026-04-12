@@ -211,6 +211,23 @@ function canSkipFullSync(
   return false;
 }
 
+function detectPrependedCandleCount(
+  previous: CandleData[],
+  next: CandleData[],
+): number {
+  if (previous.length === 0 || next.length <= previous.length) {
+    return 0;
+  }
+
+  const delta = next.length - previous.length;
+  for (let index = 0; index < previous.length; index += 1) {
+    if (!sameCandle(previous[index], next[index + delta])) {
+      return 0;
+    }
+  }
+  return delta;
+}
+
 export const TradingChart = ({
   data,
   liveTick,
@@ -235,11 +252,16 @@ export const TradingChart = ({
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const markerMapRef = useRef<Map<string, ChartMarkerData>>(new Map());
   const liveTickRef = useRef<CandleData | undefined>(liveTick);
+  const onLoadMoreHistoryRef = useRef(onLoadMoreHistory);
+  const canLoadMoreHistoryRef = useRef(canLoadMoreHistory);
+  const isLoadingMoreHistoryRef = useRef(isLoadingMoreHistory);
   const loadMoreRequestedRef = useRef(false);
+  const resetViewportRef = useRef(false);
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [showVolume, setShowVolume] = useState(true);
+  const showVolumeRef = useRef(showVolume);
   const [hoveredMarker, setHoveredMarker] = useState<HoveredMarker | null>(
     null,
   );
@@ -268,6 +290,18 @@ export const TradingChart = ({
   useEffect(() => {
     liveTickRef.current = liveTick;
   }, [liveTick]);
+  useEffect(() => {
+    onLoadMoreHistoryRef.current = onLoadMoreHistory;
+  }, [onLoadMoreHistory]);
+  useEffect(() => {
+    canLoadMoreHistoryRef.current = canLoadMoreHistory;
+  }, [canLoadMoreHistory]);
+  useEffect(() => {
+    isLoadingMoreHistoryRef.current = isLoadingMoreHistory;
+  }, [isLoadingMoreHistory]);
+  useEffect(() => {
+    showVolumeRef.current = showVolume;
+  }, [showVolume]);
   useEffect(() => {
     const nextMap = new Map<string, ChartMarkerData>();
     for (const marker of markers) {
@@ -309,8 +343,27 @@ export const TradingChart = ({
   );
 
   const applyFullChartData = useCallback(
-    (candles: CandleData[]) => {
+    (
+      candles: CandleData[],
+      options?: {
+        preserveViewport?: boolean;
+        previousCandles?: CandleData[];
+      },
+    ) => {
       if (!candlestickSeriesRef.current) return;
+
+      const preserveViewport = options?.preserveViewport ?? false;
+      const chart = chartRef.current;
+      const previousCandles = options?.previousCandles ?? [];
+      const logicalRange =
+        preserveViewport && chart
+          ? chart.timeScale().getVisibleLogicalRange()
+          : null;
+      const prependedCount =
+        preserveViewport && logicalRange
+          ? detectPrependedCandleCount(previousCandles, candles)
+          : 0;
+
       candlestickSeriesRef.current.setData(candles.map(toChartCandle));
 
       if (volumeSeriesRef.current) {
@@ -324,6 +377,12 @@ export const TradingChart = ({
 
       const latestCandle = candles[candles.length - 1];
       queueMicrotask(() => {
+        if (logicalRange && chartRef.current) {
+          chartRef.current.timeScale().setVisibleLogicalRange({
+            from: logicalRange.from + prependedCount,
+            to: logicalRange.to + prependedCount,
+          });
+        }
         updateLegend(latestCandle, latestCandle?.volume);
       });
     },
@@ -332,6 +391,7 @@ export const TradingChart = ({
 
   const handleTimeframeClick = useCallback(
     (tf: Timeframe) => {
+      resetViewportRef.current = true;
       setTimeframe(tf);
       onTimeframeChange?.(tf);
     },
@@ -396,7 +456,15 @@ export const TradingChart = ({
     volumeSeriesRef.current = volumeSeries;
 
     queueMicrotask(() => {
-      applyFullChartData(dataRef.current);
+      candlestickSeries.setData(dataRef.current.map(toChartCandle));
+      if (showVolumeRef.current) {
+        volumeSeries.setData(dataRef.current.map(toVolumePoint));
+        volumeSeries.applyOptions({ visible: true });
+      } else {
+        volumeSeries.applyOptions({ visible: false });
+      }
+      const latestCandle = dataRef.current[dataRef.current.length - 1];
+      updateLegend(latestCandle, latestCandle?.volume);
     });
 
     chart.subscribeCrosshairMove((param) => {
@@ -436,9 +504,9 @@ export const TradingChart = ({
     const handleVisibleLogicalRangeChange = (range: LogicalRange | null) => {
       if (
         !range ||
-        !onLoadMoreHistory ||
-        !canLoadMoreHistory ||
-        isLoadingMoreHistory ||
+        !onLoadMoreHistoryRef.current ||
+        !canLoadMoreHistoryRef.current ||
+        isLoadingMoreHistoryRef.current ||
         dataRef.current.length === 0 ||
         loadMoreRequestedRef.current
       ) {
@@ -447,7 +515,7 @@ export const TradingChart = ({
 
       if (range.from <= 25) {
         loadMoreRequestedRef.current = true;
-        onLoadMoreHistory();
+        onLoadMoreHistoryRef.current();
       }
     };
     chart
@@ -475,15 +543,17 @@ export const TradingChart = ({
         .unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
       chart.remove();
     };
-  }, [
-    applyFullChartData,
-    canLoadMoreHistory,
-    colors.backgroundColor,
-    colors.textColor,
-    isLoadingMoreHistory,
-    onLoadMoreHistory,
-    updateLegend,
-  ]);
+  }, [colors.backgroundColor, colors.textColor, updateLegend]);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    chartRef.current.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: colors.backgroundColor },
+        textColor: colors.textColor,
+      },
+    });
+  }, [colors.backgroundColor, colors.textColor]);
 
   useEffect(() => {
     const previous = previousDataRef.current;
@@ -491,11 +561,16 @@ export const TradingChart = ({
     const skipFullSync = canSkipFullSync(previous, next, liveTickRef.current);
 
     if (!skipFullSync) {
+      const preserveViewport = previous.length > 0 && !resetViewportRef.current;
       queueMicrotask(() => {
-        applyFullChartData(next);
+        applyFullChartData(next, {
+          preserveViewport,
+          previousCandles: previous,
+        });
       });
     }
 
+    resetViewportRef.current = false;
     previousDataRef.current = next;
   }, [applyFullChartData, sortedData]);
 
