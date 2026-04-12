@@ -52,8 +52,7 @@ export const API = {
     limit: number = 25,
     view: "hot" | "new" = "hot",
     window: "1m" | "5m" | "1h" | "4h" | "24h" = "24h",
-  ) =>
-    `${API_BASE_URL}/tokens?limit=${limit}&view=${view}&window=${window}`,
+  ) => `${API_BASE_URL}/tokens?limit=${limit}&view=${view}&window=${window}`,
   searchTokens: (query: string, limit: number = 8) =>
     `${API_BASE_URL}/search/tokens?q=${encodeURIComponent(query)}&limit=${limit}`,
   tokenDetail: (mint: string) => `${API_BASE_URL}/tokens/${mint}`,
