@@ -22,16 +22,69 @@ use writer::{write_raw_sample, write_transaction_view_sample};
 use yellowstone_grpc_proto::geyser::{SubscribeUpdateTransaction, subscribe_update::UpdateOneof};
 
 const STABLE_SESSION_RESET: Duration = Duration::from_secs(60);
+const PARSER_STATS_LOG_INTERVAL: Duration = Duration::from_secs(30);
+
+#[derive(Default, Clone, Copy)]
+struct TransactionStats {
+    transaction_updates: u64,
+    parsed_views: u64,
+    collected_events: u64,
+    forwarded_events: u64,
+    create_events: u64,
+    migrate_events: u64,
+}
+
+#[derive(Default)]
+struct SessionStats {
+    transaction_updates: u64,
+    parsed_views: u64,
+    collected_events: u64,
+    forwarded_events: u64,
+    create_events: u64,
+    migrate_events: u64,
+    pings: u64,
+    pongs: u64,
+}
+
+impl SessionStats {
+    fn add_transaction(&mut self, stats: TransactionStats) {
+        self.transaction_updates += stats.transaction_updates;
+        self.parsed_views += stats.parsed_views;
+        self.collected_events += stats.collected_events;
+        self.forwarded_events += stats.forwarded_events;
+        self.create_events += stats.create_events;
+        self.migrate_events += stats.migrate_events;
+    }
+
+    fn log(&self, uptime: Duration) {
+        eprintln!(
+            "parser heartbeat uptime={:.0}s tx={} views={} collected_events={} forwarded_events={} creates={} migrations={} pings={} pongs={}",
+            uptime.as_secs_f64(),
+            self.transaction_updates,
+            self.parsed_views,
+            self.collected_events,
+            self.forwarded_events,
+            self.create_events,
+            self.migrate_events,
+            self.pings,
+            self.pongs
+        );
+    }
+}
 
 async fn persist_transaction_samples(
     tx: &SubscribeUpdateTransaction,
     emitter: &ServiceEventEmitter,
     tracker: &mut TrackedMintTracker,
     capture_samples: bool,
-) -> Result<()> {
+) -> Result<TransactionStats> {
+    let mut stats = TransactionStats {
+        transaction_updates: 1,
+        ..Default::default()
+    };
     let parse_started = Instant::now();
     let Some(info) = &tx.transaction else {
-        return Ok(());
+        return Ok(stats);
     };
 
     let signature = bs58::encode(&info.signature).into_string();
@@ -41,6 +94,7 @@ async fn persist_transaction_samples(
 
     let view_started = Instant::now();
     if let Some(view) = build_transaction_view(tx) {
+        stats.parsed_views += 1;
         let _view_elapsed = view_started.elapsed();
         if capture_samples {
             write_transaction_view_sample(&view)?;
@@ -50,6 +104,7 @@ async fn persist_transaction_samples(
         let service_events = collect_service_events(&view);
         let _collect_elapsed = collect_started.elapsed();
         let _collected_event_count = service_events.len();
+        stats.collected_events += service_events.len() as u64;
         let mut _forwarded_event_count = 0usize;
         let mut first_forward_elapsed_ms = None;
         let mut tracker_elapsed = Duration::ZERO;
@@ -61,6 +116,7 @@ async fn persist_transaction_samples(
         for service_event in service_events {
             let tracker_started = Instant::now();
             if is_create_event(&service_event) {
+                stats.create_events += 1;
                 let accept_create_started = Instant::now();
                 if let Err(err) = tracker.accept_create_event(&service_event) {
                     eprintln!(
@@ -81,6 +137,7 @@ async fn persist_transaction_samples(
             }
 
             if is_migrate_event(&service_event) {
+                stats.migrate_events += 1;
                 let record_migration_started = Instant::now();
                 if let Err(err) = tracker.record_migration_event(&service_event).await {
                     eprintln!(
@@ -102,6 +159,7 @@ async fn persist_transaction_samples(
             emitter.emit(&service_event).await?;
             emit_elapsed += emit_started.elapsed();
             _forwarded_event_count += 1;
+            stats.forwarded_events += 1;
         }
 
         // if collected_event_count > 0 {
@@ -125,7 +183,7 @@ async fn persist_transaction_samples(
         // }
     }
 
-    Ok(())
+    Ok(stats)
 }
 
 async fn run_subscription_session(
@@ -139,10 +197,18 @@ async fn run_subscription_session(
         mut stream,
     } = subscribe_pump_ecosystem(config).await?;
     let mut next_ping_id = 1_i32;
+    let session_started = Instant::now();
+    let mut next_stats_log = Instant::now() + PARSER_STATS_LOG_INTERVAL;
+    let mut stats = SessionStats::default();
 
     loop {
         let message = tokio::select! {
             _ = sleep_until(deadline) => return Ok(()),
+            _ = sleep_until(next_stats_log) => {
+                stats.log(session_started.elapsed());
+                next_stats_log = Instant::now() + PARSER_STATS_LOG_INTERVAL;
+                continue;
+            },
             message = stream.next() => message,
         };
 
@@ -153,9 +219,13 @@ async fn run_subscription_session(
         let update = message?;
         match update.update_oneof {
             Some(UpdateOneof::Transaction(tx)) => {
-                persist_transaction_samples(&tx, emitter, tracker, config.capture_samples).await?;
+                let tx_stats =
+                    persist_transaction_samples(&tx, emitter, tracker, config.capture_samples)
+                        .await?;
+                stats.add_transaction(tx_stats);
             }
             Some(UpdateOneof::Ping(_)) => {
+                stats.pings += 1;
                 reply_to_ping(&mut sink, next_ping_id).await?;
                 next_ping_id = if next_ping_id == i32::MAX {
                     1
@@ -163,7 +233,9 @@ async fn run_subscription_session(
                     next_ping_id + 1
                 };
             }
-            Some(UpdateOneof::Pong(_)) => {}
+            Some(UpdateOneof::Pong(_)) => {
+                stats.pongs += 1;
+            }
             _ => {}
         }
     }

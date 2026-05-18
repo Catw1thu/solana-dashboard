@@ -280,9 +280,7 @@ const SPL_TOKEN_2022_PROGRAM_ID: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpP
 fn extract_mint_decimals(view: &TransactionView, mint: &str) -> Option<u8> {
     for group in &view.inner_instruction_groups {
         for ix in &group.instructions {
-            if ix.program_id != SPL_TOKEN_PROGRAM_ID
-                && ix.program_id != SPL_TOKEN_2022_PROGRAM_ID
-            {
+            if ix.program_id != SPL_TOKEN_PROGRAM_ID && ix.program_id != SPL_TOKEN_2022_PROGRAM_ID {
                 continue;
             }
 

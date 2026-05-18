@@ -10,6 +10,8 @@ pub struct Config {
 }
 
 pub fn load_config() -> Result<Config> {
+    load_dotenv();
+
     let grpc_endpoint = std::env::var("GRPC_ENDPOINT")?.trim().to_string();
     let grpc_token = std::env::var("GRPC_TOKEN")?.trim().to_string();
     let nats_url = std::env::var("NATS_URL")
@@ -49,4 +51,13 @@ pub fn load_config() -> Result<Config> {
         redis_url,
         capture_samples,
     })
+}
+
+fn load_dotenv() {
+    let candidates = [".env", "../.env", "../../.env"];
+    for path in candidates {
+        if dotenvy::from_filename(path).is_ok() {
+            return;
+        }
+    }
 }
