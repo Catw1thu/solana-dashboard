@@ -48,8 +48,8 @@ pub(crate) fn event_matches_instruction(
         }
         PumpfunInstruction::CreateV2(ix) => {
             event.mint == accounts.mint
-                && event.bonding_curve == accounts.bonding_curve
-                && event.user == accounts.user
+                && matches_if_present(&accounts.bonding_curve, &event.bonding_curve)
+                && matches_if_present(&accounts.user, &event.user)
                 && event.creator == ix.creator
                 && event.name == ix.name
                 && event.symbol == ix.symbol
@@ -64,6 +64,10 @@ pub(crate) fn event_matches_instruction(
         | PumpfunInstruction::BuyExactSolIn(_)
         | PumpfunInstruction::Migrate(_) => false,
     }
+}
+
+fn matches_if_present(actual: &str, expected: &str) -> bool {
+    actual.is_empty() || actual == expected
 }
 
 pub(crate) fn build_create(

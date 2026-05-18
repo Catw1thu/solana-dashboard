@@ -15,10 +15,6 @@ impl<'a> ByteReader<'a> {
         Self { data, offset: 0 }
     }
 
-    fn is_finished(&self) -> bool {
-        self.offset == self.data.len()
-    }
-
     fn read_bytes(&mut self, len: usize) -> Option<&'a [u8]> {
         let bytes = self.data.get(self.offset..self.offset + len)?;
         self.offset += len;
@@ -94,10 +90,6 @@ pub fn parse_trade_event_bytes(data: &[u8]) -> Option<TradeEvent> {
         cashback: reader.read_u64_le()?,
     };
 
-    if !reader.is_finished() {
-        return None;
-    }
-
     Some(trade_event)
 }
 
@@ -126,10 +118,6 @@ pub fn parse_create_event_bytes(data: &[u8]) -> Option<CreateEvent> {
         is_cashback_enabled: reader.read_bool()?,
     };
 
-    if !reader.is_finished() {
-        return None;
-    }
-
     Some(create_event)
 }
 
@@ -150,10 +138,6 @@ pub fn parse_migrate_event_bytes(data: &[u8]) -> Option<MigrateEvent> {
         timestamp: reader.read_i64_le()?,
         pool: reader.read_pubkey()?,
     };
-
-    if !reader.is_finished() {
-        return None;
-    }
 
     Some(migrate_event)
 }

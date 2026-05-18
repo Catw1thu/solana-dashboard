@@ -11,9 +11,24 @@ mod unified_parser;
 mod writer;
 
 use anyhow::Result;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use client::{reply_to_ping, subscribe_pump_ecosystem};
 use config::load_config;
 use futures::StreamExt;
+use pumpfun::discriminators::{
+    CREATE_EVENT_DISC as PUMPFUN_CREATE_EVENT_DISC,
+    CREATE_V2_EVENT_DISC as PUMPFUN_CREATE_V2_EVENT_DISC,
+};
+use pumpfun::{
+    PUMPFUN_PROGRAM_ID,
+    discriminators::{
+        BUY_EXACT_SOL_IN_IX_DISC, BUY_IX_DISC, CREATE_IX_DISC, CREATE_V2_IX_DISC, MIGRATE_IX_DISC,
+        SELL_IX_DISC,
+    },
+    events::parse_create_event_bytes,
+    instruction::parse_decoded_instruction as parse_pumpfun_instruction,
+    model::PumpfunInstruction,
+};
 use service_event::{ServiceEventEmitter, collect_service_events};
 use tokio::time::{Duration, Instant, sleep, sleep_until};
 use tracker::{TrackedMintTracker, is_create_event, is_migrate_event};
@@ -32,6 +47,18 @@ struct TransactionStats {
     forwarded_events: u64,
     create_events: u64,
     migrate_events: u64,
+    pumpfun_trade_events: u64,
+    pumpamm_events: u64,
+    pumpfun_buy_ix: u64,
+    pumpfun_sell_ix: u64,
+    pumpfun_buy_exact_sol_ix: u64,
+    pumpfun_create_ix: u64,
+    pumpfun_create_v2_ix: u64,
+    pumpfun_create_v2_parseable_ix: u64,
+    pumpfun_create_event_bytes: u64,
+    pumpfun_create_event_parseable: u64,
+    pumpfun_migrate_ix: u64,
+    pumpfun_other_ix: u64,
 }
 
 #[derive(Default)]
@@ -42,6 +69,18 @@ struct SessionStats {
     forwarded_events: u64,
     create_events: u64,
     migrate_events: u64,
+    pumpfun_trade_events: u64,
+    pumpamm_events: u64,
+    pumpfun_buy_ix: u64,
+    pumpfun_sell_ix: u64,
+    pumpfun_buy_exact_sol_ix: u64,
+    pumpfun_create_ix: u64,
+    pumpfun_create_v2_ix: u64,
+    pumpfun_create_v2_parseable_ix: u64,
+    pumpfun_create_event_bytes: u64,
+    pumpfun_create_event_parseable: u64,
+    pumpfun_migrate_ix: u64,
+    pumpfun_other_ix: u64,
     pings: u64,
     pongs: u64,
 }
@@ -54,18 +93,42 @@ impl SessionStats {
         self.forwarded_events += stats.forwarded_events;
         self.create_events += stats.create_events;
         self.migrate_events += stats.migrate_events;
+        self.pumpfun_trade_events += stats.pumpfun_trade_events;
+        self.pumpamm_events += stats.pumpamm_events;
+        self.pumpfun_buy_ix += stats.pumpfun_buy_ix;
+        self.pumpfun_sell_ix += stats.pumpfun_sell_ix;
+        self.pumpfun_buy_exact_sol_ix += stats.pumpfun_buy_exact_sol_ix;
+        self.pumpfun_create_ix += stats.pumpfun_create_ix;
+        self.pumpfun_create_v2_ix += stats.pumpfun_create_v2_ix;
+        self.pumpfun_create_v2_parseable_ix += stats.pumpfun_create_v2_parseable_ix;
+        self.pumpfun_create_event_bytes += stats.pumpfun_create_event_bytes;
+        self.pumpfun_create_event_parseable += stats.pumpfun_create_event_parseable;
+        self.pumpfun_migrate_ix += stats.pumpfun_migrate_ix;
+        self.pumpfun_other_ix += stats.pumpfun_other_ix;
     }
 
     fn log(&self, uptime: Duration) {
         eprintln!(
-            "parser heartbeat uptime={:.0}s tx={} views={} collected_events={} forwarded_events={} creates={} migrations={} pings={} pongs={}",
+            "parser heartbeat uptime={:.0}s tx={} views={} collected_events={} forwarded_events={} pumpfun_trades={} creates={} migrations={} pumpamm_events={} pumpfun_ix={{buy:{} sell:{} buy_exact_sol:{} create:{} create_v2:{} create_v2_parseable:{} migrate:{} other:{}}} pumpfun_create_event={{bytes:{} parseable:{}}} pings={} pongs={}",
             uptime.as_secs_f64(),
             self.transaction_updates,
             self.parsed_views,
             self.collected_events,
             self.forwarded_events,
+            self.pumpfun_trade_events,
             self.create_events,
             self.migrate_events,
+            self.pumpamm_events,
+            self.pumpfun_buy_ix,
+            self.pumpfun_sell_ix,
+            self.pumpfun_buy_exact_sol_ix,
+            self.pumpfun_create_ix,
+            self.pumpfun_create_v2_ix,
+            self.pumpfun_create_v2_parseable_ix,
+            self.pumpfun_migrate_ix,
+            self.pumpfun_other_ix,
+            self.pumpfun_create_event_bytes,
+            self.pumpfun_create_event_parseable,
             self.pings,
             self.pongs
         );
@@ -95,6 +158,8 @@ async fn persist_transaction_samples(
     let view_started = Instant::now();
     if let Some(view) = build_transaction_view(tx) {
         stats.parsed_views += 1;
+        count_pumpfun_instruction_discriminators(&view, &mut stats);
+        count_pumpfun_create_event_bytes(&view, &mut stats);
         let _view_elapsed = view_started.elapsed();
         if capture_samples {
             write_transaction_view_sample(&view)?;
@@ -115,6 +180,17 @@ async fn persist_transaction_samples(
 
         for service_event in service_events {
             let tracker_started = Instant::now();
+            match (&service_event.protocol, &service_event.event_type) {
+                (
+                    service_event::model::ServiceEventProtocol::Pumpfun,
+                    service_event::model::ServiceEventType::Trade,
+                ) => stats.pumpfun_trade_events += 1,
+                (service_event::model::ServiceEventProtocol::Pumpamm, _) => {
+                    stats.pumpamm_events += 1
+                }
+                _ => {}
+            }
+
             if is_create_event(&service_event) {
                 stats.create_events += 1;
                 let accept_create_started = Instant::now();
@@ -184,6 +260,113 @@ async fn persist_transaction_samples(
     }
 
     Ok(stats)
+}
+
+fn count_pumpfun_instruction_discriminators(
+    view: &transaction_view::TransactionView,
+    stats: &mut TransactionStats,
+) {
+    for ix in &view.outer_instructions {
+        count_pumpfun_discriminator(
+            &ix.program_id,
+            &ix.data_prefix,
+            &ix.data_base64,
+            &ix.account_pubkeys,
+            stats,
+        );
+    }
+    for group in &view.inner_instruction_groups {
+        for ix in &group.instructions {
+            count_pumpfun_discriminator(
+                &ix.program_id,
+                &ix.data_prefix,
+                &ix.data_base64,
+                &ix.account_pubkeys,
+                stats,
+            );
+        }
+    }
+}
+
+fn count_pumpfun_discriminator(
+    program_id: &str,
+    data_prefix: &[u8],
+    data_base64: &str,
+    account_pubkeys: &[String],
+    stats: &mut TransactionStats,
+) {
+    if program_id != PUMPFUN_PROGRAM_ID {
+        return;
+    }
+
+    let Some(discriminator) = data_prefix.get(0..8) else {
+        stats.pumpfun_other_ix += 1;
+        return;
+    };
+
+    match discriminator {
+        value if value == BUY_IX_DISC => stats.pumpfun_buy_ix += 1,
+        value if value == SELL_IX_DISC => stats.pumpfun_sell_ix += 1,
+        value if value == BUY_EXACT_SOL_IN_IX_DISC => stats.pumpfun_buy_exact_sol_ix += 1,
+        value if value == CREATE_IX_DISC => stats.pumpfun_create_ix += 1,
+        value if value == CREATE_V2_IX_DISC => {
+            stats.pumpfun_create_v2_ix += 1;
+            if let Ok(bytes) = STANDARD.decode(data_base64)
+                && matches!(
+                    parse_pumpfun_instruction(program_id, account_pubkeys, &bytes),
+                    Some(PumpfunInstruction::CreateV2(_))
+                )
+            {
+                stats.pumpfun_create_v2_parseable_ix += 1;
+            }
+        }
+        value if value == MIGRATE_IX_DISC => stats.pumpfun_migrate_ix += 1,
+        _ => stats.pumpfun_other_ix += 1,
+    }
+}
+
+fn count_pumpfun_create_event_bytes(
+    view: &transaction_view::TransactionView,
+    stats: &mut TransactionStats,
+) {
+    for log in &view.log_messages {
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+        let Ok(bytes) = STANDARD.decode(encoded) else {
+            continue;
+        };
+        count_create_event_bytes(&bytes, stats);
+    }
+
+    for group in &view.inner_instruction_groups {
+        for ix in &group.instructions {
+            if ix.program_id != PUMPFUN_PROGRAM_ID {
+                continue;
+            }
+            let Ok(bytes) = STANDARD.decode(&ix.data_base64) else {
+                continue;
+            };
+            count_create_event_bytes(&bytes, stats);
+            if bytes.len() > 8 {
+                count_create_event_bytes(&bytes[8..], stats);
+            }
+        }
+    }
+}
+
+fn count_create_event_bytes(bytes: &[u8], stats: &mut TransactionStats) {
+    let Some(discriminator) = bytes.get(0..8) else {
+        return;
+    };
+    if discriminator != PUMPFUN_CREATE_EVENT_DISC && discriminator != PUMPFUN_CREATE_V2_EVENT_DISC {
+        return;
+    }
+
+    stats.pumpfun_create_event_bytes += 1;
+    if parse_create_event_bytes(bytes).is_some() {
+        stats.pumpfun_create_event_parseable += 1;
+    }
 }
 
 async fn run_subscription_session(
