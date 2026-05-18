@@ -81,6 +81,13 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard}@postgres:5432/${POSTGRES_DB:-solana_dashboard}?sslmode=disable
       API_ADDR: 0.0.0.0:8080
       NATS_URL: nats://nats:4222
+      OPS_DOCKER_ENABLED: ${OPS_DOCKER_ENABLED:-0}
+      OPS_DOCKER_SOCKET: /var/run/docker.sock
+      OPS_CONTAINER_PREFIX: ${OPS_CONTAINER_PREFIX:-solana-dashboard-}
+      OPS_DATA_PATH: /ops-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/ops-data:ro
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
     logging: *default-logging

@@ -94,4 +94,5 @@ export const API = {
     `${API_BASE_URL}/tokens/${mint}/timeline?limit=${limit}`,
   tokenEvents: (mint: string, limit: number = 100) =>
     `${API_BASE_URL}/tokens/${mint}/events?limit=${limit}`,
+  opsDocker: () => `${API_BASE_URL}/ops/docker`,
 };

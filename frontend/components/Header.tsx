@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, SunMoon, Search, X } from "lucide-react";
+import { Activity, Server, SunMoon, Search, X } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { API } from "../config/api";
@@ -234,6 +234,14 @@ export const Header = () => {
             <span className="live-dot" />
             <span className="hidden sm:inline">System Operational</span>
           </div>
+
+          <Link
+            href="/ops"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-(--border-primary) bg-(--bg-secondary) hover:bg-(--bg-tertiary) transition-colors"
+            title="运行资源监控"
+          >
+            <Server className="h-4 w-4 text-(--text-muted)" />
+          </Link>
 
           {/* Theme Toggle */}
           <button

@@ -13,6 +13,7 @@ import (
 	"solana-dashboard-go/internal/jetstream"
 	"solana-dashboard-go/internal/metadatafetcher"
 	"solana-dashboard-go/internal/observability"
+	"solana-dashboard-go/internal/ops"
 	"solana-dashboard-go/internal/projector"
 	"solana-dashboard-go/internal/query"
 	"solana-dashboard-go/internal/realtime"
@@ -54,6 +55,12 @@ func main() {
 	service := ingest.NewService(hub, serviceEventStore)
 	tokenQueries := query.NewTokenService(serviceEventStore, readModelStore)
 	handler := httpapi.NewHandler(service, tokenQueries)
+	dockerMonitor := ops.NewDockerMonitor(ops.DockerMonitorConfig{
+		Enabled:         cfg.OpsDockerEnabled,
+		SocketPath:      cfg.OpsDockerSocketPath,
+		ContainerPrefix: cfg.OpsContainerPrefix,
+		DataPath:        cfg.OpsDataPath,
+	})
 	projectionRunner := projector.NewRunner("token_read_model", serviceEventStore, eventProjector)
 
 	go func() {
@@ -90,6 +97,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", observability.Default())
+	mux.Handle("/ops/docker", observability.InstrumentHTTP("ops_docker", dockerMonitor.ServeHTTP))
 	mux.HandleFunc("/healthz", observability.InstrumentHTTP("healthz", handler.Healthz))
 	mux.HandleFunc("/internal/events", observability.InstrumentHTTP("ingest_event", handler.IngestEvent))
 	mux.HandleFunc("GET /tokens", observability.InstrumentHTTP("list_tokens", handler.ListTokens))
