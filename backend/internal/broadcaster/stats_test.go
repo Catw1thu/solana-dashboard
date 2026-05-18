@@ -259,6 +259,112 @@ func TestBackfillCurrentMetricsSeedsMissingRows(t *testing.T) {
 	}
 }
 
+func TestRunResubscribesGlobalHubAfterOverflow(t *testing.T) {
+	hub := realtime.NewHub()
+	mint := "mint_resub"
+	nowTs := time.Now().Unix()
+	store := &mockTradeMetricsStore{
+		candidates: []string{mint},
+		longMetrics: map[string]store.LongWindowMetricsRecord{
+			mint: {Mint: mint},
+		},
+		latestSeeds: map[string]store.LatestTradeSeedRecord{
+			mint: {
+				Mint:            mint,
+				LatestPrice:     floatPtr(1),
+				LatestEventUnix: int64Ptr(nowTs),
+			},
+		},
+	}
+	b := &Broadcaster{
+		hub:             hub,
+		metricsStore:    store,
+		windows:         make(map[string]*TokenWindowState),
+		globalHubBuffer: 1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- b.Run(ctx)
+	}()
+
+	waitForSubscriber(t, hub, "global")
+
+	first := makePumpfunTradeEnvelope(mint, "event_first", nowTs)
+	second := makePumpfunTradeEnvelope(mint, "event_second", nowTs+1)
+	hub.Publish("global", first)
+	hub.Publish("global", second)
+
+	waitForSubscriber(t, hub, "global")
+
+	third := makePumpfunTradeEnvelope(mint, "event_third", nowTs+2)
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for trade after resubscribe")
+		case <-ticker.C:
+			hub.Publish("global", third)
+			window := b.getWindow(mint)
+			window.mu.Lock()
+			lastLogID := window.LastLogID
+			window.mu.Unlock()
+			if lastLogID == third.LogID {
+				cancel()
+				select {
+				case err := <-done:
+					if err != nil {
+						t.Fatalf("Run returned error: %v", err)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("timed out waiting for broadcaster shutdown")
+				}
+				return
+			}
+		}
+	}
+}
+
+func waitForSubscriber(t *testing.T, hub *realtime.Hub, topic string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for subscriber on topic %s", topic)
+		case <-ticker.C:
+			if hub.HasSubscribers(topic) {
+				return
+			}
+		}
+	}
+}
+
+func makePumpfunTradeEnvelope(mint string, eventID string, eventUnixTS int64) events.Envelope {
+	payload := events.PumpfunTradePayload{
+		Mint:         mint,
+		Side:         "buy",
+		SolAmount:    "1000000000",
+		TokenAmount:  "1000000",
+		BondingCurve: "curve",
+	}
+	bytes, _ := json.Marshal(payload)
+	return events.Envelope{
+		LogID:       eventUnixTS,
+		EventID:     eventID,
+		Protocol:    "pumpfun",
+		EventType:   "trade",
+		EventUnixTS: eventUnixTS,
+		Payload:     json.RawMessage(bytes),
+	}
+}
+
 func stringPtr(v string) *string {
 	return &v
 }

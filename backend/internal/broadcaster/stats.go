@@ -22,6 +22,8 @@ const (
 	defaultTokenDecimals = 6
 	shortWindowSeconds   = int64(300)
 	longWindowTTLSeconds = int64(24 * 60 * 60)
+	globalHubBufferSize  = 8192
+	backfillRepairLimit  = 250
 )
 
 type TokenStatsPayload struct {
@@ -114,11 +116,12 @@ type TokenWindowState struct {
 }
 
 type Broadcaster struct {
-	nc           *nats.Conn
-	hub          *realtime.Hub
-	metricsStore tradeMetricsStore
-	windows      map[string]*TokenWindowState
-	mu           sync.RWMutex
+	nc              *nats.Conn
+	hub             *realtime.Hub
+	metricsStore    tradeMetricsStore
+	windows         map[string]*TokenWindowState
+	globalHubBuffer int
+	mu              sync.RWMutex
 }
 
 type tradeMetricsStore interface {
@@ -152,10 +155,11 @@ func NewBroadcaster(natsURL string, hub *realtime.Hub, metricsStore tradeMetrics
 	}
 
 	return &Broadcaster{
-		nc:           nc,
-		hub:          hub,
-		metricsStore: metricsStore,
-		windows:      make(map[string]*TokenWindowState),
+		nc:              nc,
+		hub:             hub,
+		metricsStore:    metricsStore,
+		windows:         make(map[string]*TokenWindowState),
+		globalHubBuffer: globalHubBufferSize,
 	}
 }
 
@@ -722,13 +726,12 @@ func (b *Broadcaster) Sweep() {
 }
 
 func (b *Broadcaster) Run(ctx context.Context) error {
-	var hubSub *realtime.Subscription
-	var hubEvents <-chan events.Envelope
-	if b.hub != nil {
-		hubSub = b.hub.Subscribe("global", 1024)
-		hubEvents = hubSub.Events
-		defer b.hub.Unsubscribe(hubSub)
-	}
+	hubSub, hubEvents, hubOverflow := b.subscribeGlobalHub()
+	defer func() {
+		if b.hub != nil && hubSub != nil {
+			b.hub.Unsubscribe(hubSub)
+		}
+	}()
 
 	if hubSub == nil && b.nc != nil {
 		js, err := b.nc.JetStream()
@@ -747,6 +750,26 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 		}
 	}
 
+	resubscribeGlobal := func(reason string) {
+		if b.hub == nil {
+			return
+		}
+		observability.Default().IncCounter("stats_global_resubscribe_total", 1)
+		log.Printf("[stats] resubscribing global hub feed after %s", reason)
+		if hubSub != nil {
+			b.hub.Unsubscribe(hubSub)
+		}
+		hubSub, hubEvents, hubOverflow = b.subscribeGlobalHub()
+		if b.metricsStore != nil {
+			if err := b.BackfillCurrentMetrics(context.Background(), backfillRepairLimit); err != nil {
+				observability.Default().IncCounter("stats_global_repair_errors_total", 1)
+				log.Printf("[stats] failed to repair metrics after global %s: %v", reason, err)
+			} else {
+				observability.Default().IncCounter("stats_global_repair_runs_total", 1)
+			}
+		}
+	}
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -756,15 +779,34 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 			return nil
 		case event, ok := <-hubEvents:
 			if !ok {
-				hubSub = nil
-				hubEvents = nil
+				resubscribeGlobal("events_closed")
 				continue
 			}
 			b.handleTrade(&event)
+		case _, ok := <-hubOverflow:
+			if !ok {
+				resubscribeGlobal("overflow_closed")
+				continue
+			}
+			observability.Default().IncCounter("stats_global_overflow_total", 1)
+			resubscribeGlobal("overflow")
 		case <-ticker.C:
 			b.Sweep()
 		}
 	}
+}
+
+func (b *Broadcaster) subscribeGlobalHub() (*realtime.Subscription, <-chan events.Envelope, <-chan struct{}) {
+	if b == nil || b.hub == nil {
+		return nil, nil, nil
+	}
+	buffer := b.globalHubBuffer
+	if buffer <= 0 {
+		buffer = globalHubBufferSize
+	}
+	sub := b.hub.Subscribe("global", buffer)
+	observability.Default().IncCounter("stats_global_subscribe_total", 1)
+	return sub, sub.Events, sub.Overflow
 }
 
 func isPumpfunTradeEvent(env *events.Envelope) bool {
