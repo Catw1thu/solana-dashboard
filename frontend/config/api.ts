@@ -1,35 +1,52 @@
 // API Configuration
-// Uses environment variable if set, otherwise falls back to current window location
+// Uses environment variables if set, otherwise falls back to same-origin proxy
+// paths. This lets production deployments keep the backend private behind
+// Caddy/Nginx while the browser only talks to /api and /ws.
+
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
 
 function getApiBaseUrl(): string {
   // Check for environment variable first
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    return stripTrailingSlash(process.env.NEXT_PUBLIC_API_URL);
   }
 
-  // In browser, use the current hostname with backend port
-  if (typeof window !== "undefined") {
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:8081`; // default Go backend port is 8081 based on env
-  }
-
-  // Server-side fallback
-  return "http://localhost:8081";
+  return "/api";
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
-function getWsBaseUrl(): string {
+function makeWsUrlFromOrigin(origin: string): string {
+  const url = new URL(origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function getWsUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) {
-    return process.env.NEXT_PUBLIC_WS_URL;
+    const configured = stripTrailingSlash(process.env.NEXT_PUBLIC_WS_URL);
+    if (configured.startsWith("/")) {
+      if (typeof window !== "undefined") {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${window.location.host}${configured}`;
+      }
+      return configured;
+    }
+    return configured.endsWith("/ws") ? configured : `${configured}/ws`;
   }
 
   if (process.env.NEXT_PUBLIC_API_URL) {
     try {
-      const apiUrl = new URL(process.env.NEXT_PUBLIC_API_URL);
-      apiUrl.protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
-      return apiUrl.origin;
+      const apiUrl = new URL(
+        process.env.NEXT_PUBLIC_API_URL,
+        typeof window !== "undefined" ? window.location.origin : undefined,
+      );
+      return makeWsUrlFromOrigin(apiUrl.origin);
     } catch {
       // Fallback to host-based inference below.
     }
@@ -37,14 +54,12 @@ function getWsBaseUrl(): string {
 
   if (typeof window !== "undefined") {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:8081`;
+    return `${protocol}//${window.location.host}/ws`;
   }
-  return "ws://localhost:8081";
+  return "ws://localhost:8081/ws";
 }
 
-export const WS_BASE_URL = getWsBaseUrl();
-export const WS_URL = `${WS_BASE_URL}/ws`;
+export const WS_URL = getWsUrl();
 
 // Go Backend Endpoints
 export const API = {
