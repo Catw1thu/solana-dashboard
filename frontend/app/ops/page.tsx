@@ -23,9 +23,9 @@ interface DockerSnapshot {
   container_prefix?: string;
   error?: string;
   totals: DockerTotals;
-  containers: ContainerMetric[];
+  containers: ContainerMetric[] | null;
   disk: DockerDiskUsage;
-  runtime_dirs?: RuntimeDirUsage[];
+  runtime_dirs?: RuntimeDirUsage[] | null;
 }
 
 interface DockerTotals {
@@ -74,6 +74,14 @@ interface RuntimeDirUsage {
   bytes: number;
   error?: string;
 }
+
+const EMPTY_DISK: DockerDiskUsage = {
+  images_bytes: 0,
+  containers_bytes: 0,
+  volumes_bytes: 0,
+  build_cache_bytes: 0,
+  runtime_data_bytes: 0,
+};
 
 function formatBytes(value?: number | null): string {
   if (value == null || !Number.isFinite(value) || value < 0) return "--";
@@ -198,23 +206,32 @@ export default function OpsPage() {
   }, []);
 
   const totals = snapshot?.totals;
+  const disk = snapshot?.disk ?? EMPTY_DISK;
+  const rawContainers = snapshot?.containers;
+  const rawRuntimeDirs = snapshot?.runtime_dirs;
+  const containers = useMemo(
+    () => (Array.isArray(rawContainers) ? rawContainers : []),
+    [rawContainers],
+  );
+  const runtimeDirs = useMemo(
+    () => (Array.isArray(rawRuntimeDirs) ? rawRuntimeDirs : []),
+    [rawRuntimeDirs],
+  );
   const dockerDiskTotal = useMemo(() => {
-    if (!snapshot) return 0;
     return (
-      snapshot.disk.images_bytes +
-      snapshot.disk.containers_bytes +
-      snapshot.disk.volumes_bytes +
-      snapshot.disk.build_cache_bytes
+      disk.images_bytes +
+      disk.containers_bytes +
+      disk.volumes_bytes +
+      disk.build_cache_bytes
     );
-  }, [snapshot]);
+  }, [disk]);
   const runtimeDataTotal = useMemo(() => {
-    if (!snapshot) return 0;
-    const fromDirs = (snapshot.runtime_dirs ?? []).reduce(
+    const fromDirs = runtimeDirs.reduce(
       (sum, dir) => sum + (dir.bytes ?? 0),
       0,
     );
-    return fromDirs || snapshot.disk.runtime_data_bytes || 0;
-  }, [snapshot]);
+    return fromDirs || disk.runtime_data_bytes || 0;
+  }, [disk, runtimeDirs]);
 
   const memoryPercent = totals
     ? ratio(totals.memory_usage_bytes, totals.memory_limit_bytes)
@@ -308,7 +325,7 @@ export default function OpsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(snapshot?.containers ?? []).map((container) => (
+                  {containers.map((container) => (
                     <tr
                       key={container.id}
                       className="border-t border-(--border-primary) text-(--text-secondary)"
@@ -370,7 +387,7 @@ export default function OpsPage() {
                       </td>
                     </tr>
                   ))}
-                  {snapshot?.containers.length === 0 && (
+                  {containers.length === 0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -392,7 +409,7 @@ export default function OpsPage() {
                 运行数据目录
               </div>
               <div className="mt-4 space-y-3 text-sm">
-                {(snapshot?.runtime_dirs ?? []).map((dir) => (
+                {runtimeDirs.map((dir) => (
                   <DiskRow
                     key={dir.path}
                     label={dir.name}
@@ -401,7 +418,7 @@ export default function OpsPage() {
                     detail={dir.error}
                   />
                 ))}
-                {(snapshot?.runtime_dirs ?? []).length === 0 && (
+                {runtimeDirs.length === 0 && (
                   <div className="text-sm text-(--text-muted)">
                     暂无目录数据。部署时挂载 ./data:/ops-data:ro 后可用。
                   </div>
@@ -417,22 +434,22 @@ export default function OpsPage() {
               <div className="mt-4 space-y-3 text-sm">
                 <DiskRow
                   label="镜像"
-                  value={snapshot?.disk.images_bytes}
+                  value={disk.images_bytes}
                   total={dockerDiskTotal}
                 />
                 <DiskRow
                   label="容器"
-                  value={snapshot?.disk.containers_bytes}
+                  value={disk.containers_bytes}
                   total={dockerDiskTotal}
                 />
                 <DiskRow
                   label="卷"
-                  value={snapshot?.disk.volumes_bytes}
+                  value={disk.volumes_bytes}
                   total={dockerDiskTotal}
                 />
                 <DiskRow
                   label="构建缓存"
-                  value={snapshot?.disk.build_cache_bytes}
+                  value={disk.build_cache_bytes}
                   total={dockerDiskTotal}
                 />
               </div>

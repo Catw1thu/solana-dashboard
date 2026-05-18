@@ -152,6 +152,8 @@ func (m *DockerMonitor) Snapshot(ctx context.Context) (DockerSnapshot, error) {
 		Enabled:         m.enabled,
 		GeneratedAt:     time.Now().Unix(),
 		ContainerPrefix: m.containerPrefix,
+		Containers:      []ContainerMetric{},
+		RuntimeDirs:     []RuntimeDirUsage{},
 	}
 	snapshot.RuntimeDirs = m.runtimeDirUsage(ctx)
 	for _, dir := range snapshot.RuntimeDirs {
@@ -227,7 +229,7 @@ func (m *DockerMonitor) Snapshot(ctx context.Context) (DockerSnapshot, error) {
 
 func (m *DockerMonitor) runtimeDirUsage(ctx context.Context) []RuntimeDirUsage {
 	if m.dataPath == "" {
-		return nil
+		return []RuntimeDirUsage{}
 	}
 
 	now := time.Now()
@@ -330,7 +332,7 @@ func diskUsageBytes(info os.FileInfo) int64 {
 
 func cloneRuntimeDirs(dirs []RuntimeDirUsage) []RuntimeDirUsage {
 	if len(dirs) == 0 {
-		return nil
+		return []RuntimeDirUsage{}
 	}
 	out := make([]RuntimeDirUsage, len(dirs))
 	copy(out, dirs)
